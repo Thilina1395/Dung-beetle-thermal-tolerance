@@ -1,0 +1,3237 @@
+---
+title: "Dung beetle thermal tolerance"
+format: html
+editor: visual
+---
+
+## Dung beetle thermal tolerance under humidity stress
+
+Humidity is known to affect and shape the physiological tolerances of species, particularly their thermal tolerance. However, it remains uncertain how changing humidity conditions might alter the physiological tolerance of insects. In this study, I examine the response of dung beetles' physiological tolerance (measured by CTmin & CTmax) to various levels of humidity stress.
+
+Authors - Thilina S Nimalrathna, Akihiro Nakamura
+
+Institute - Forest Canopy Ecology Group, Xishuangbanna Tropical Botanical Garden, Chinese Academy of Sciences
+
+```{r libraries}
+#| echo: false
+
+## Install packages
+library(ggplot2)
+library(ggpubr)
+library(ggbreak)
+library(MASS) # for boxcox
+library(tidyverse) 
+library(dbplyr) 
+library(readxl) 
+library(iNEXT) # to create sampling sufficiency curves
+library(vegan)  # for multivariate analysis
+library(lme4) # to run the lmer function (linear mixed effects model)
+library(lmerTest) # to perform automatic backward model selection of fixed and random parts of the linear mixed effect model
+library(emmeans) # for post-hoc pairwise tests
+library(car) # to run the Anova function that calculates p values for each factor
+library(MuMIn)
+library(ciTools) # for confidence intervals
+library(performance) # for checking diagnostics
+library(RColorBrewer) # for beautiful colors
+library(grid)
+library(moments)
+library(multcomp)
+
+R.version.string
+
+citation("emmeans")
+```
+
+## Import necessary data
+
+The study will primarily utilize two types of data. Firstly, data will be collected on the CTmin and CTmax values for each dung beetle individual under varying humidity stresses. Secondly, data will include measurements of body traits from each individual beetle.
+
+```{r}
+#| echo: false
+
+localDir = "."
+dataDir = file.path("/Users/thilinanimalrathna/iCloud Drive (Archive)/Desktop/My Documents/Acedamic/MSc_PhD_work/Analysis_thermal_tolerance", "Data_files")
+
+# Both tropical and subtropical data
+thermal.df.both<- read.csv(file.path(dataDir,"thermal_data_all_for_analysis.csv"),header = TRUE)
+str(thermal.df.both)
+head(thermal.df.both)
+colnames(thermal.df.both)
+
+# remove species dweller black ; too few samples!
+thermal.df.both <- thermal.df.both[thermal.df.both$species != "Dweller_black",]  
+# remove species MSP_04 ; too few samples!
+thermal.df.both <- thermal.df.both[thermal.df.both$species != "MSP_04",] 
+# remove species MSP_18 ; too few samples!
+thermal.df.both <- thermal.df.both[thermal.df.both$species != "MSP_18",] 
+# remove species sp3 ; too few samples!
+thermal.df.both <- thermal.df.both[thermal.df.both$species != "sp3",] 
+
+# Convert groups into category
+thermal.df.both$site <- as.factor(thermal.df.both$site)
+thermal.df.both$species <- as.factor(thermal.df.both$species)
+thermal.df.both$metric<- as.factor(thermal.df.both$metric)
+thermal.df.both$humidity <- as.factor(thermal.df.both$humidity)
+thermal.df.both$treatment <- as.factor(thermal.df.both$treatment)
+thermal.df.both$Subfamily <- as.factor(thermal.df.both$Subfamily)
+
+# Create new variables for use in ggplot
+thermal.df.both$site.metric <- paste(thermal.df.both$site, thermal.df.both$metric)
+thermal.df.both$site.metric <- as.factor(thermal.df.both$site.metric)
+
+thermal.df.both$species.metric <- paste(thermal.df.both$species, thermal.df.both$metric)
+thermal.df.both$species.metric <- as.factor(thermal.df.both$species.metric)
+
+# answer the question one , I will only use the CT max and CT min data for 50% humidity level.
+
+# Isolate both CT data for 50% humidity
+thermal.df.both.subtropical<- subset(thermal.df.both,site=="subtropics")
+thermal.df.both.tropical<- subset(thermal.df.both,site=="tropics")
+
+
+# Isolate both CT data for 50% humidity
+thermal.df.both.50<- subset(thermal.df.both,humidity=="50%")
+
+# Subset thermal data for based on thermal limit
+thermal.df.both.CTmax<- subset(thermal.df.both,metric=="CTmax")
+thermal.df.both.CTmin<- subset(thermal.df.both,metric=="CTmin")
+
+# Subset thermal data for 50% humidity
+thermal.df.both.CTmax.50<- subset(thermal.df.both.CTmax,humidity=="50%")
+thermal.df.both.CTmin.50<- subset(thermal.df.both.CTmin,humidity=="50%")
+
+
+################################################################################
+
+# answer the question one , I will only use the CT max and CT min data for tropical region only to answer the question two
+
+thermal.df.both.trop<- subset(thermal.df.both,site=="tropics")
+thermal.df.both.subtropics<- subset(thermal.df.both,site=="subtropics")
+
+
+# Create CTmax and CTmin dataframes_tropics
+thermal.df.both.trop_CTmax <- subset(thermal.df.both.trop,metric=="CTmax")
+thermal.df.both.trop_CTmin <- subset(thermal.df.both.trop,metric=="CTmin")
+
+
+# Create CTmax and CTmin dataframes_subtropics
+thermal.df.both.subtropics_CTmax <- subset(thermal.df.both.subtropics,metric=="CTmax")
+thermal.df.both.subtropics_CTmin <- subset(thermal.df.both.subtropics,metric=="CTmin")
+
+
+################################################################################
+
+
+
+
+# All thermal and body trait
+thermal.df.all<- read.csv(file.path(dataDir,"thermal_data_and_body.csv"),header = TRUE)
+str(thermal.df.all)
+head(thermal.df.all)
+colnames(thermal.df.all)
+
+
+# remove species MSP_06 ; too few samples!
+thermal.df.all <- thermal.df.all[thermal.df.all$species != "MSP_06",]
+# remove species MSP_05 ; too few samples!
+thermal.df.all <- thermal.df.all[thermal.df.all$species != "MSP_05",]
+
+# Convert groups into category
+thermal.df.all$site <- as.factor(thermal.df.all$site)
+thermal.df.all$species <- as.factor(thermal.df.all$species)
+thermal.df.all$metric<- as.factor(thermal.df.all$metric)
+thermal.df.all$humidity <- as.factor(thermal.df.all$humidity)
+thermal.df.all$treatment <- as.factor(thermal.df.all$treatment)
+
+# lest take a look at the data set
+str(thermal.df.all)
+thermal.df.all %>%
+  count(species)
+thermal.df.all %>%
+  count(site)
+thermal.df.all %>%
+  count(treatment)
+thermal.df.all %>%
+  count(species, metric, humidity)
+
+# Create CTmax and CTmin dataframes
+thermal.df_CTmax <- subset(thermal.df.all,metric=="CTmax")
+thermal.df_CTmin <- subset(thermal.df.all,metric=="CTmin")
+
+# Subset thermal data for each humidity levels-CTmax
+thermal.df_CTmax.30 <- subset(thermal.df_CTmax,humidity=="30%")
+thermal.df_CTmax.50 <- subset(thermal.df_CTmax,humidity=="50%")
+thermal.df_CTmax.90 <- subset(thermal.df_CTmax,humidity=="90%")
+
+# Subset thermal data for each humidity levels-CTmax
+thermal.df_CTmin.30 <- subset(thermal.df_CTmin,humidity=="30%")
+thermal.df_CTmin.50 <- subset(thermal.df_CTmin,humidity=="50%")
+thermal.df_CTmin.90 <- subset(thermal.df_CTmin,humidity=="90%")
+
+# remove species MSP_06 ; dont have for ctmax 90
+#thermal.df <- thermal.df[thermal.df$species != "MSP_06",] 
+
+```
+
+
+### Sample Summary
+
+```{r}
+# Total number of unique species across the whole dataset
+length(unique(thermal.df.both$species))
+# or using dplyr:
+# dplyr::n_distinct(df$species)
+
+# Number of unique species per site/region
+aggregate(species ~ site, data = thermal.df.both, function(x) length(unique(x)))
+
+# Or using dplyr:
+library(dplyr)
+thermal.df.both %>%
+  group_by(site) %>%
+  summarise(n_species = n_distinct(species), n_individuals = n())
+```
+
+
+
+## Normality check
+
+```{r}
+
+## Thermal tolerance between Sub tropical and tropical
+## CTmax data
+
+################################ thermal.df.both.CTmax.50 ################################
+
+# Check the normality-CTmax
+ggdensity(thermal.df.both.CTmax.50$set_temp, 
+          main = "Density plot of CTmax",
+          xlab = "CTmax")  # looks right skewed
+ggqqplot(thermal.df.both.CTmax.50$set_temp)
+
+hist(thermal.df.both.CTmax.50$set_temp, main="Histogram of CTmax", xlab="", breaks=10) # left skewed
+skewness(thermal.df.both.CTmax.50$set_temp, na.rm = TRUE) #-0.9143051
+shapiro.test(as.numeric(thermal.df.both.CTmax.50$set_temp))#p= 0.0003323 not normal. Will transform
+
+# Transform data to be normal
+thermal.df.both.CTmax.50$set_temp.trans<-sqrt(max((thermal.df.both.CTmax.50$set_temp)+1)-(thermal.df.both.CTmax.50$set_temp))
+
+# Check the normality-CTmax
+ggdensity(thermal.df.both.CTmax.50$set_temp.trans, 
+          main = "Density plot of CTmax transform",
+          xlab = "CTmax")  # looks right skewed
+ggqqplot(thermal.df.both.CTmax.50$set_temp.trans) # Looks normal
+
+hist(thermal.df.both.CTmax.50$set_temp.trans, main="Histogram of CTmax.transformed", xlab="", breaks=10) # looks normal
+skewness(thermal.df.both.CTmax.50$set_temp.trans, na.rm = TRUE) # 0.07559757
+shapiro.test(as.numeric(thermal.df.both.CTmax.50$set_temp.trans)) #p=0.1357 normal.
+
+################################ thermal.df.both.CTmin.50 ################################
+
+# Check the normality-CTmin
+ggdensity(thermal.df.both.CTmin.50$set_temp, 
+          main = "Density plot of CTmin",
+          xlab = "CTmin")  # looks normal
+ggqqplot(thermal.df.both.CTmin.50$set_temp)
+
+hist(thermal.df.both.CTmin.50$set_temp, main="Histogram of CTmin", xlab="", breaks=10) # looks normal
+skewness(thermal.df.both.CTmin.50$set_temp, na.rm = TRUE) # -0.2286706
+shapiro.test(as.numeric(thermal.df.both.CTmin.50$set_temp))#p= 0.001594 not normal. Will use glmer with species as the random factor
+
+# Transform data to be normal
+thermal.df.both.CTmin.50$set_temp.trans<-sqrt(max((thermal.df.both.CTmin.50$set_temp)+1)-(thermal.df.both.CTmin.50$set_temp))
+
+# Check the normality-CTmin
+ggdensity(thermal.df.both.CTmin.50$set_temp.trans, 
+          main = "Density plot of CTmin transform",
+          xlab = "CTmin")  # looks right skewed
+ggqqplot(thermal.df.both.CTmin.50$set_temp.trans) # Looks normal
+
+hist(thermal.df.both.CTmin.50$set_temp.trans, main="Histogram of CTmin.transformed", xlab="", breaks=10) # looks normal
+skewness(thermal.df.both.CTmin.50$set_temp.trans, na.rm = TRUE) # -0.9959317
+shapiro.test(as.numeric(thermal.df.both.CTmin.50$set_temp.trans)) #p=2.486e-05 transformed data is not normal. so glm
+
+# Log tranform the dat ato be normal. but will add a constanst to make all values positive 
+
+thermal.df.both.CTmin.50$set_temp.lg1<-((thermal.df.both.CTmin.50$set_temp)+3)
+thermal.df.both.CTmin.50$set_temp.lg<-log10(thermal.df.both.CTmin.50$set_temp.lg1)
+
+shapiro.test(as.numeric(thermal.df.both.CTmin.50$set_temp.lg))
+
+################################################################################
+
+# Check the normality-CTmax
+ggdensity(thermal.df_CTmax$set_temp, 
+          main = "Density plot of CTmax",
+          xlab = "CTmax")  # looks right skewed
+ggqqplot(thermal.df_CTmax$set_temp)
+
+hist(thermal.df_CTmax$set_temp, main="Histogram of CTmax", xlab="", breaks=10) # looks nromal
+skewness(thermal.df_CTmax$set_temp, na.rm = TRUE) # 0.8963217
+shapiro.test(as.numeric(thermal.df_CTmax$set_temp))#p= 0.002424 not normal. Will do some transformation
+
+thermal.df_CTmax$set_temp.lg<-log10(thermal.df_CTmax$set_temp)
+
+# Check the normality-CTmax transformed data
+ggdensity(thermal.df_CTmax$set_temp.lg, 
+          main = "Density plot of CTmax.log",
+          xlab = "CTmax.inv")  # looks right skewed
+ggqqplot(thermal.df_CTmax$set_temp.lg)
+
+hist(thermal.df_CTmax$set_temp.lg, main="Histogram of CTmax.log", xlab="", breaks=10) # looks right skewed
+skewness(thermal.df_CTmax$set_temp.lg, na.rm = TRUE) # 0.7755681
+shapiro.test(as.numeric(thermal.df_CTmax$set_temp.lg))#p= 0.007208 not normal. So will use glm
+
+# Check the normality-CTmin
+ggdensity(thermal.df_CTmin$set_temp, 
+          main = "Density plot of CTmin",
+          xlab = "CTmin") # looks right skewed
+ggqqplot(thermal.df_CTmin$set_temp) 
+
+hist(thermal.df_CTmin$set_temp, main="Histogram of CTmin", xlab="", breaks=10) # looks normal
+skewness(thermal.df_CTmin$set_temp, na.rm = TRUE) # 0.5965519
+shapiro.test(as.numeric(thermal.df_CTmin$set_temp))#p= 0.003366 not normal. so some transformation
+
+thermal.df_CTmin$set_temp.sqrt<-sqrt(thermal.df_CTmin$set_temp)
+
+# Check the normality-CTmax transformed data
+ggdensity(thermal.df_CTmin$set_temp.sqrt, 
+          main = "Density plot of CTmin.sqrt",
+          xlab = "CTmin.sqrt")  # looks normal
+ggqqplot(thermal.df_CTmin$set_temp.sqrt)
+
+hist(thermal.df_CTmin$set_temp.sqrt, main="Histogram of CTmin.sqrt", xlab="", breaks=10) # looks normal
+skewness(thermal.df_CTmin$set_temp.sqrt, na.rm = TRUE) # -0.1747567
+shapiro.test(as.numeric(thermal.df_CTmin$set_temp.sqrt))#p=0.2615 not normal. So will use glm
+
+```
+
+### Create species summary data tables for analysis
+
+```{r}
+# species_temp  table summarizes CTmin and CTmax by species and treatment
+# this will be used for some of our linear models later that need averages by species
+species_temp <- 
+  thermal.df.all %>%
+  group_by(species, metric, humidity) %>%
+  summarise(temp = mean(set_temp,na.rm=TRUE))
+
+species_temp <- pivot_wider(species_temp, names_from=metric, values_from=temp) # make different columns for average ctmin and ctmax
+species_temp$range = species_temp$CTmax - species_temp$CTmin # calculate range from CTmax to CTmin
+species_temp
+```
+
+# Question 1: Analysis for CT differences between climatic regions
+
+Question: How do dung beetle thermal tolerances respond in different climate zones?
+
+Hypothesis 1: Beetles from the subtropics have lower CTmax and CTmin, but larger thermal tolerance range, because of higher temperature range in subtropics.
+
+## Analysis for CTmax
+
+### Sample summaries
+
+```{r}
+
+# MSP_06 - Synapsis birmanicus
+# MSP_07 - Onthophagus sp.08		
+# MSP_20	- Onthophagus sp.05		
+# MSP_41 - Onthophagus sp.06		
+# MSP_09 - Onthophagus sp.07
+# sp1	-	Brachiaphodius sp.
+# MSP_01 - Paragymnopleurus sp.
+# MSP_05 -	Onthophagus sp.04
+# sp2	- Aparammoecius sp.
+# sp7 - Onthophagus sp.01
+# sp8 - Onthophagus sp.02 
+# sp9 - Onthophagus sp.03
+
+
+library(dplyr)
+
+# CTmax
+# 1. Total counts: number of unique species and total individuals
+thermal.df.both.CTmax.50 %>%
+  summarise(
+    n_species = n_distinct(species),
+    total_individuals = n()
+  )
+
+thermal.df.both.CTmax.50 %>%
+  group_by(site) %>%
+  summarise(
+    n_species = n_distinct(species),
+    total_individuals = n(),
+    .groups = "drop"
+  )
+
+
+
+write.csv(thermal.df.both.CTmax.50_sp, file = "thermal.df.both.CTmax.50_sp.csv", row.names = FALSE)
+
+# 2. Number of individuals per species (sorted from highest to lowest)
+species_summary_CTmax.50 <- thermal.df.both.CTmax.50 %>%
+  group_by(species) %>%
+  summarise(n_individuals = n()) %>%
+  arrange(desc(n_individuals))
+
+print(species_summary_CTmax.50)
+write.csv(species_summary_CTmax.50, file = "species_summary_CTmax.50.csv", row.names = FALSE)
+
+# 3. If you want breakdown by metric and humidity as well:
+species_summary_CTmax.50_site<-thermal.df.both.CTmax.50 %>%
+  group_by(site, metric, humidity, species) %>%
+  summarise(n_individuals = n(), .groups = "drop")
+
+write.csv(species_summary_CTmax.50_site, file = "species_summary_CTmax.50_site.csv", row.names = FALSE)
+
+```
+
+
+
+
+```{r}
+
+lm_site_max50 <- lmer(set_temp.trans~site+(1|species),thermal.df.both.CTmax.50,na.action=na.omit)
+
+overdisp_fun <- overdisp_fun <- function(model) {
+    rdf <- df.residual(model)
+    rp <- residuals(model,type="pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+    c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+
+#overdisp_fun
+overdisp_fun(lm_site_max50) #p-value is 1.00000000, the model is not overdispered
+
+#pp_check(abundance_best) %>% plot()
+model_check_lm_site_max50<-check_model(lm_site_max50)
+print(model_check_lm_site_max50)
+ggsave("model_check_lm_site_max50.tiff", units="in",width = 16, height = 12,device='tiff', dpi=300)
+
+#Model summaries 
+summary(lm_site_max50) # Significant differences in CT max under 50% humidity between sites
+Anova(lm_site_max50,test="F")
+r.squaredGLMM(lm_site_max50) #R2m=0.4360318   R2c=0.9254454
+
+labels_thermal.df.both.CTmax.50<-thermal.df.both.CTmax.50%>% group_by(site) %>% summarize(mean = mean(set_temp),sd=sd(set_temp))
+
+p_site.all.max<- ggplot(thermal.df.both.CTmax.50, aes(x=site, y=set_temp, fill=site),
+                                add = "jitter") +
+  theme_bw(base_size = 15)+
+  geom_boxplot(width=0.4,alpha=0.5) +
+  geom_jitter(color="black", size=2, alpha=0.6, position = "jitter")+
+  xlab("Species") + 
+  ylab("CTmax.50") + # Improve axis labels
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35),
+        panel.grid.major = element_blank(),  #remove major-grid labels
+        panel.grid.minor = element_blank()
+        )+
+  scale_fill_manual(values = c("subtropics" = "green4",
+                               "tropics"="#E69F00"))+
+  ylim(32,52)+guides(fill=guide_legend(title="Climate region"))
+
+p_site.all.max
+ggsave("p_site.all.max.tiff", units="in",width = 12, height = 9,device='tiff', dpi=600)
+
+
+```
+
+## Analysis for CTmin
+
+
+
+### Sample summaries
+
+```{r}
+
+# MSP_06 - Synapsis birmanicus
+# MSP_07 - Onthophagus sp.08		
+# MSP_20	- Onthophagus sp.05		
+# MSP_41 - Onthophagus sp.06		
+# MSP_09 - Onthophagus sp.07
+# sp1	-	Brachiaphodius sp.
+# MSP_01 - Paragymnopleurus sp.
+# MSP_05 -	Onthophagus sp.04
+# sp2	- Aparammoecius sp.
+# sp7 - Onthophagus sp.01
+# sp8 - Onthophagus sp.02 
+# sp9 - Onthophagus sp.03
+
+
+library(dplyr)
+
+# CTmax
+# 1. Total counts: number of unique species and total individuals
+thermal.df.both.CTmin.50 %>%
+  summarise(
+    n_species = n_distinct(species),
+    total_individuals = n()
+  )
+
+
+thermal.df.both.CTmin.50 %>%
+  group_by(site) %>%
+  summarise(
+    n_species = n_distinct(species),
+    total_individuals = n(),
+    .groups = "drop"
+  )
+
+
+
+
+# 2. Number of individuals per species (sorted from highest to lowest)
+species_summary_CTmin.50 <- thermal.df.both.CTmin.50 %>%
+  group_by(species) %>%
+  summarise(n_individuals = n()) %>%
+  arrange(desc(n_individuals))
+
+print(species_summary_CTmin.50)
+write.csv(species_summary_CTmin.50, file = "species_summary_CTmin.50.csv", row.names = FALSE)
+
+# 3. If you want breakdown by metric and humidity as well:
+species_summary_CTmin.50_site<-thermal.df.both.CTmin.50 %>%
+  group_by(site, metric, humidity, species) %>%
+  summarise(n_individuals = n(), .groups = "drop")
+
+write.csv(species_summary_CTmin.50_site, file = "species_summary_CTmin.50_site.csv", row.names = FALSE)
+
+```
+
+
+
+
+```{r}
+
+glm_site_min50 <- glmer(set_temp.lg1~site+(1|species),thermal.df.both.CTmin.50,na.action=na.omit, family=Gamma(link = "log"))
+
+overdisp_fun <- overdisp_fun <- function(model) {
+    rdf <- df.residual(model)
+    rp <- residuals(model,type="pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+    c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+
+#overdisp_fun
+overdisp_fun(glm_site_min50) #p-value is 1.00000000, the model is not overdispered
+
+#pp_check(abundance_best) %>% plot()
+model_check_glm_site_min50<-check_model(glm_site_min50)
+print(model_check_glm_site_min50)
+ggsave("model_check_glm_site_min50.tiff", units="in",width = 16, height = 12,device='tiff', dpi=300)
+
+#Model summaries 
+summary(glm_site_min50) # Significant differences in CTmin under 50% humidity between sites
+Anova(glm_site_min50)
+
+labels_thermal.df.both.CTmin.50<-thermal.df.both.CTmin.50%>% group_by(site) %>% summarize(mean = mean(set_temp),sd=sd(set_temp))
+
+
+p_site.all.min<- ggplot(thermal.df.both.CTmin.50, aes(x=site, y=set_temp, fill=site),
+                                add = "jitter") +
+  theme_bw(base_size = 15)+
+  geom_boxplot(width=0.4,alpha=0.5) +
+  geom_jitter(color="black", size=2, alpha=0.6, position = "jitter")+
+  xlab("Species") + 
+  ylab("CTmin.50") + # Improve axis labels
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35),
+        panel.grid.major = element_blank(),  #remove major-grid labels
+        panel.grid.minor = element_blank()
+        )+
+  scale_fill_manual(values = c("subtropics" = "green4",
+                               "tropics"="#E69F00"))+
+  ylim(-5,20)+guides(fill=guide_legend(title="Climate region"))
+
+p_site.all.min
+ggsave("p_site.all.min.tiff", units="in",width = 12, height = 9,device='tiff', dpi=600)
+
+
+```
+
+### Combine plot for CTmax and CTmin
+
+```{r}
+
+
+
+# For all species together
+p_site.all<- ggplot(thermal.df.both, aes(x=site, y=set_temp, fill=metric, group = site.metric),add = "jitter") +
+  theme_bw(base_size = 15)+
+  geom_violin(scale = "width",
+              color = "black",linewidth = 0.5,alpha=0.5,, position = position_identity()) + 
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 1.5,
+               color = "black")  +
+  geom_jitter(color="black", size=2, alpha=0.6, position = "jitter", shape = 16)+
+  xlab("Species") + 
+  ylab("CTmin.50") + # Improve axis labels
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35),
+        panel.grid.major = element_blank(),  #remove major-grid labels
+        panel.grid.minor = element_blank()
+        )+
+  scale_fill_manual(values = c("CTmax"="#E9C46A",
+                               "CTmin" = "#009E73"))+
+  ylim(-5,56)+guides(fill=guide_legend(title="Climate region")) #+
+ # scale_y_break(c(15, 30))
+
+p_site.all
+ggsave("p_site.all.tiff", units="in",width = 12, height = 9,device='tiff', dpi=600)
+
+# separated by species
+thermal.df.both$species <- factor(thermal.df.both$species, levels=c("sp1",
+                                     "sp2","sp7","sp8","sp9","MSP_05",
+                                     "MSP_20","MSP_41","MSP_09","MSP_07",
+                                     "MSP_01","MSP_06"))
+
+p_site.all.species<- ggplot(thermal.df.both, aes(x=species, y=set_temp, fill=metric, group = species.metric),
+                                add = "jitter") +
+  theme_bw(base_size = 15)+
+  geom_boxplot(width=0.8,alpha=0.5,position="identity",linewidth = 0.5) +
+  geom_jitter(color="black", size=2, alpha=0.6, position = "jitter", shape = 16)+
+  xlab("Species") + 
+  ylab("CTmax-CTmin") + # Improve axis labels
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30,angle = 45, vjust = 1, hjust=1),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35),
+        panel.grid.major = element_blank(),  #remove major-grid labels
+        panel.grid.minor = element_blank()
+        )+
+  scale_fill_manual(values = c("CTmax"="#E9C46A",
+                               "CTmin" = "#009E73"))+
+  ylim(-5,52)+guides(fill=guide_legend(title="Climate region")) 
+
+p_site.all.species
+ggsave("p_site.all.species.tiff", units="in",width = 16, height = 9,device='tiff', dpi=300)
+
+
+
+
+
+
+
+# With background color
+
+# 1. Ensure species factor is ordered correctly (12 species total)
+thermal.df.both$species <- factor(thermal.df.both$species, 
+                                  levels = c("sp1", "sp2", "sp7", "sp8", "sp9", "MSP_05", 
+                                             "MSP_20", "MSP_41", "MSP_09", "MSP_07", 
+                                             "MSP_01", "MSP_06"))
+
+# 2. Build the plot (FIX: changed x to as.numeric(species))
+p_site.all.species.bg.col <- ggplot(thermal.df.both, aes(x = as.numeric(species), y = set_temp, fill = metric)) +
+  
+  # A. SHADED BACKGROUNDS
+  # Light blue for subtropics (x coordinates 0.5 to 2.5)
+  annotate("rect", xmin = 0.5, xmax = 2.5, ymin = -Inf, ymax = Inf,
+           fill = "#eaf2fa", alpha = 1) + 
+  # Light green for tropics (x coordinates 2.5 to 12.5)
+  annotate("rect", xmin = 2.5, xmax = 12.5, ymin = -Inf, ymax = Inf,
+           fill = "#edf9ef", alpha = 1) + 
+  
+  # C. DATA LAYERS
+  geom_boxplot(aes(group = species.metric), width = 0.8, alpha = 0.5, 
+               position = "identity", linewidth = 0.5) +
+  geom_jitter(aes(group = species.metric), color = "black", size = 2, 
+              alpha = 0.6, width = 0.2, shape = 16) +
+  
+  # D. LABELS AND SCALES
+  xlab("Species") + 
+  ylab(expression(Critical~thermal~limits~(~degree*C))) + 
+  scale_fill_manual(values = c("CTmax" = "#E9C46A", "CTmin" = "#009E73")) +
+  ylim(-5, 52) +
+  
+  # NEW: This converts the numeric axis back to your categorical species names!
+  scale_x_continuous(
+    breaks = 1:12, 
+    labels = levels(thermal.df.both$species)
+  ) +
+  
+  guides(fill = guide_legend(title = "Metric")) + 
+  
+  # E. THEME
+  theme_bw(base_size = 35) +
+  theme(
+    legend.position = "right",
+    panel.background = element_blank(),
+    strip.background = element_blank(),
+    panel.grid.major = element_blank(),  
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 30, angle = 45, vjust = 1, hjust = 1),
+    axis.text.y = element_text(size = 35),
+    axis.title.x = element_text(size = 35),
+    axis.title.y = element_text(size = 40),
+    plot.title = element_text(size = 35)
+  )
+
+p_site.all.species.bg.col
+ggsave("p_site.all.species.tiff", plot = p_site.all.species.bg.col, units = "in", width = 15, height = 9, device = 'tiff', dpi = 300)
+
+
+```
+
+# Analysis for CT min and max ranges
+
+```{r}
+
+#####Create species summary data tables####
+
+# species_temp  table summarizes CTmin and CTmax by species and treatment
+# this will be used for some of our linear models later that need averages by species
+species_temp <- 
+  thermal.df.both.CTmax.50 %>%
+  group_by(ID, site, metric, humidity) %>%
+  summarise(temp = mean(set_temp,na.rm=TRUE))
+species_temp <- pivot_wider(species_temp, names_from=metric, values_from=temp) # make different columns for average ctmin and ctmax
+species_temp$range = species_temp$CTmax - species_temp$CTmin # calculate range from CTmax to CTmin
+species_temp
+
+
+# Method 1: by species averages
+# Species average ranges by humidity are in the species_temp tibble
+
+species_temp_50 <- species_temp %>% filter(str_detect(humidity,'50')) 
+
+# Check the normality-CTmax
+ggdensity(species_temp_50$range, 
+          main = "Density plot of CTmax-CTmin",
+          xlab = "CTmax-CTmin")  # looks normal
+ggqqplot(species_temp_50$range)
+
+hist(species_temp_50$range, main="Histogram of CTmax-CTmin", xlab="", breaks=10)
+skewness(species_temp_50$range, na.rm = TRUE) # -0.07568756
+shapiro.test(as.numeric(species_temp_50$range))#p= 0.8117 data are normal
+
+# use 50% humidity only
+lm_site_range50 <- lm(range~site,species_temp_50, na.action=na.omit)
+summary(lm_site_range50) # !HERE: the range is not significantly different
+r.squaredGLMM(lm_site_range50) 
+Anova(lm_site_range50,test="F") 
+
+
+p_site.all.range<- ggplot(species_temp_50, aes(x=site, y=range, fill=site),
+                                add = "jitter") +
+  theme_bw(base_size = 15)+
+  geom_boxplot(width=0.4,alpha=0.5) +
+  geom_jitter(color="black", size=2, alpha=0.6, position = "jitter")+
+  xlab("Sites") + 
+  ylab("CTmax-CTmin") + # Improve axis labels
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35),
+        panel.grid.major = element_blank(),  #remove major-grid labels
+        panel.grid.minor = element_blank()
+        )+
+  scale_fill_manual(values = c("subtropics" = "#00AFBB",
+                               "tropics"="#C3D7A4"))+
+  ylim(30,45)+guides(fill=guide_legend(title="Climate region"))
+
+p_site.all.range
+ggsave("p_site.all.range.tiff", units="in",width = 12, height = 9,device='tiff', dpi=600)
+
+```
+
+## New
+
+```{r}
+
+# Load necessary libraries
+library(tidyverse)
+library(lme4)
+library(lmerTest) # Required to extract p-values from lmer models
+library(ggpubr)
+
+# 1. Filter for 50% humidity and valid species
+# We only want species that have BOTH CTmax and CTmin data
+thermal_50 <- thermal.df.both.50 %>%
+  filter(str_detect(humidity, '50%')) %>%
+  group_by(species) %>%
+  filter(any(metric == "CTmax") & any(metric == "CTmin")) %>%
+  ungroup()
+
+# 2. Set up the Monte Carlo Simulation
+set.seed(123) # Ensures reproducibility
+n_iters <- 1000 # Number of random pairings to simulate
+p_values <- numeric(n_iters) # Empty vector to store p-values
+simulated_ranges <- list() # To store the datasets for plotting later
+
+# 3. Run the loop
+for (i in 1:n_iters) {
+  
+  # A. Randomly pair CTmax and CTmin within each species
+  sim_data <- thermal_50 %>%
+    group_by(site, species) %>%
+    reframe(
+      # To match your actual effort, we generate pairs equal to the minimum 
+      # number of CTmax or CTmin observations for that specific species
+      n_obs = min(sum(metric == "CTmax"), sum(metric == "CTmin")),
+      rand_CTmax = sample(set_temp[metric == "CTmax"], n_obs[1], replace = TRUE),
+      rand_CTmin = sample(set_temp[metric == "CTmin"], n_obs[1], replace = TRUE)
+    ) %>%
+    mutate(range = rand_CTmax - rand_CTmin)
+  
+  # B. Run the Mixed Model
+  # range is predicted by site, controlling for species-level differences
+  mod <- lmer(range ~ site + (1|species), data = sim_data)
+  
+  # C. Extract the p-value for the 'site' effect
+  # Row 2 of coefficients is typically the comparison between the two sites
+  p_val <- summary(mod)$coefficients[2, "Pr(>|t|)"]
+  p_values[i] <- p_val
+  
+  # Save the first iteration to use for our Main Text plot later
+  if (i == 1) { rep_data <- sim_data }
+}
+
+# 4. Evaluate the Robustness
+# You mentioned significance under 0.005, we will check both 0.05 and 0.005
+prop_sig_05 <- mean(p_values < 0.05)
+prop_sig_005 <- mean(p_values < 0.005)
+
+cat("Percentage of models with p < 0.05:", prop_sig_05 * 100, "%\n")
+cat("Percentage of models with p < 0.005:", prop_sig_005 * 100, "%\n")
+
+
+# Install the package if you haven't already:
+# install.packages("gghalves")
+library(gghalves)
+library(ggplot2)
+
+
+
+p_main <- ggplot(rep_data, aes(x = site, y = range)) +
+  # 1. Half-violin on the right
+  geom_half_violin(aes(fill = site), side = "r", color = NA, alpha = 0.6, 
+                   position = position_nudge(x = 0.1)) +
+  
+  # 2. Narrow boxplot in the center
+  geom_boxplot(aes(fill = site), width = 0.15, alpha = 0.6, outlier.shape = NA,linewidth = 0.5) +
+  
+  # 3. Jittered points on the left (FIXED HERE)
+  # Convert site to a number and subtract 0.15 to shift it left
+  geom_jitter(aes(x = as.numeric(as.factor(site)) - 0.15, color = species), 
+              size = 2, alpha = 0.7, width = 0.05,shape = 16) +
+  
+  # Base theme and labels
+  theme_bw(base_size = 35) +
+  labs(
+    x = "Climate Region", 
+    y = expression(Thermal~Breadth~(CT[max] - CT[min])),
+    fill = "Climate Region",
+    color = "Species"
+  ) +
+  scale_fill_manual(values = c("subtropics" = "#00AFBB", "tropics" = "#C3D7A4")) +
+  
+  # Theme adjustments
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "right" 
+  )
+
+
+p_main
+ggsave("Main_Text_Thermal_Breadth.tiff", plot = p_main, units = "in", width = 12, height = 9, dpi = 300)
+
+
+# Convert p-values to a dataframe for plotting
+p_df <- data.frame(p_value = p_values)
+
+p_supp <- ggplot(p_df, aes(x = p_value)) +
+  geom_histogram(bins = 30, fill = "gray70", color = "black") +
+  geom_vline(xintercept = 0.05, color = "red", linetype = "dashed", size = 1.2) +
+  theme_classic(base_size = 18) +
+  labs(
+    x = "Simulated P-values",
+    y = "Frequency (out of 1000 iterations)",
+    title = "Monte Carlo Resampling P-values"
+  ) +
+  annotate("text", x = 0.06, y = 100, label = "p = 0.05 cutoff", color = "red", hjust = 0)
+
+p_supp
+ggsave("Supp_Pvalue_Distribution.tiff", plot = p_supp, units = "in", width = 8, height = 6, dpi = 300)
+
+
+# Thermal breadth main text figure analysis
+
+
+# Check the normality-CTmax
+ggdensity(rep_data$range, 
+          main = "Density plot of CTmax-CTmin",
+          xlab = "CTmax-CTmin")  # looks normal
+ggqqplot(rep_data$range)
+
+hist(rep_data$range, main="Histogram of CTmax-CTmin", xlab="", breaks=10)
+skewness(rep_data$range, na.rm = TRUE) # -0.1070671
+shapiro.test(as.numeric(rep_data$range))#p= 0.3454 data are normal
+
+# use 50% humidity only
+lm_site_range50 <- lm(range~site,rep_data, na.action=na.omit)
+summary(lm_site_range50) # !HERE: the range is not significantly different
+r.squaredGLMM(lm_site_range50) 
+Anova(lm_site_range50,test="F") 
+
+```
+
+## Question 2
+
+Question: How do dung beetle thermal tolerances respond under different humidity gradients?
+
+Hypothesis: Increasing humidity will decrease CTmax of dung beetles, because it reduces the ability of the beetles to use evapotranspiration to thermoregulate.
+
+Linear model: CTmax \~ site\*humidity+ (1\|species) We include site because we want to understand if there is an interaction between humidity and site
+
+For this analysis, we only used tropical species, as we were only able to collect enough dung beetle individuals for each experiment from tropical forests. We tested the CTmax and CTmin for dung beetle species under three humidity levels: 30%, 50%, and 90%.
+
+## CTmax-Tropical
+
+### Sample summary tropical
+
+
+
+```{r}
+
+# MSP_06 - Synapsis birmanicus
+# MSP_07 - Onthophagus sp.08		
+# MSP_20	- Onthophagus sp.05		
+# MSP_41 - Onthophagus sp.06		
+# MSP_09 - Onthophagus sp.07
+# sp1	-	Brachiaphodius sp. (Sub)
+# MSP_01 - Paragymnopleurus sp.
+# MSP_05 -	Onthophagus sp.04
+# sp2	- Aparammoecius sp.     (Sub)
+# sp7 - Onthophagus sp.01
+# sp8 - Onthophagus sp.02 
+# sp9 - Onthophagus sp.03
+
+
+
+library(dplyr)
+library(readr)
+library(tibble)
+
+# 1. Create the species lookup table
+species_lookup <- tibble(
+  species = c(
+    "MSP_06", "MSP_07", "MSP_20", "MSP_41", "MSP_09",
+    "sp1", "MSP_01", "MSP_05", "sp2", "sp7", "sp8", "sp9"
+  ),
+  scientific_name = c(
+    "Synapsis birmanicus",
+    "Onthophagus sp.08",
+    "Onthophagus sp.05",
+    "Onthophagus sp.06",
+    "Onthophagus sp.07",
+    "Brachiaphodius sp. (Sub)",
+    "Paragymnopleurus sp.",
+    "Onthophagus sp.04",
+    "Aparammoecius sp. (Sub)",
+    "Onthophagus sp.01",
+    "Onthophagus sp.02",
+    "Onthophagus sp.03"
+  )
+)
+
+# 2. Summary of species count and total individuals per metric and humidity
+humidity_summary <- thermal.df.both.trop %>%
+  filter(site == "tropics") %>%
+  group_by(metric, humidity) %>%
+  summarise(
+    n_species = n_distinct(species),
+    total_individuals = n(),
+    .groups = "drop"
+  )
+
+print(humidity_summary)
+write_csv(humidity_summary, "tropical_humidity_experiment_summary.csv")
+
+# 3. Count of individuals per species, joined with the scientific name
+species_detail_summary <- thermal.df.both.trop %>%
+  filter(site == "tropics") %>%
+  group_by(metric, humidity, species) %>%
+  summarise(
+    n_individuals = n(),
+    .groups = "drop"
+  ) %>%
+  # Join the scientific names here:
+  left_join(species_lookup, by = "species") %>%
+  # Place scientific_name right next to species:
+  relocate(scientific_name, .after = species) %>%
+  arrange(metric, humidity, desc(n_individuals))
+
+print(species_detail_summary)
+write_csv(species_detail_summary, "tropical_species_counts_supplementary.csv")
+```
+
+
+
+
+
+
+
+
+
+```{r}
+
+# Check the normality-CTmax
+ggdensity(thermal.df.both.trop_CTmax$set_temp, 
+          main = "Density plot of CTmax",
+          xlab = "CTmax")  # looks fine
+ggqqplot(thermal.df.both.trop_CTmax$set_temp)
+
+hist(thermal.df.both.trop_CTmax$set_temp, main="Histogram of CTmax", xlab="", breaks=10) # looks fine
+skewness(thermal.df.both.trop_CTmax$set_temp, na.rm = TRUE) # 0.4498596 positive
+shapiro.test(as.numeric(thermal.df.both.trop_CTmax$set_temp))#p= 0.01102 not normal. Will transform
+
+# log transform for moderate positive skewed
+thermal.df.both.trop_CTmax$set_temp.lg<-log10(thermal.df.both.trop_CTmax$set_temp)
+shapiro.test(as.numeric(thermal.df.both.trop_CTmax$set_temp.lg))#p= 0.06076 normal
+
+# Without considering the secies and only to see the differencesin CTmax when differnet humuidty level applied
+
+lm_ctmax_all<- glmer(set_temp.lg~humidity+(1|species),
+                 thermal.df.both.trop_CTmax,na.action=na.omit)
+
+overdisp_fun <- overdisp_fun <- function(model) {
+    rdf <- df.residual(model)
+    rp <- residuals(model,type="pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+    c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+
+
+#overdisp_fun
+overdisp_fun(lm_ctmax_all) #p-value is 1.000000e+00   , the model is overdispered
+
+
+#pp_check(abundance_best) %>% plot()
+model_check_lm_ctmax_all<-check_model(lm_ctmax_all)
+print(model_check_lm_ctmax_all)
+ggsave("model_check_lm_ctmax_all.tiff", units="in",width = 16, height = 12,device='tiff', dpi=300)
+
+
+
+#Model summaries 
+summary(lm_ctmax_all)
+Anova(lm_ctmax_all,test="F")
+anova(lm_ctmax_all)
+plot(lm_ctmax_all)
+ref_grid(lm_ctmax_all)
+ref_grid(lm_ctmax_all) @ grid
+
+# Calculate the marginal mean
+em_lm_ctmax_all<-emmeans(lm_ctmax_all,~humidity,
+                         type="response")
+em_lm_ctmax_all.con<-contrast(em_lm_ctmax_all)
+pairs(em_lm_ctmax_all, by=NULL)
+plot(em_lm_ctmax_all)
+
+# extract letters
+class(em_lm_ctmax_all.con)
+emmeans:::cld.emmGrid(em_lm_ctmax_all.con,Letter="abcdefg")
+
+pairs(em_lm_ctmax_all.con) # to double-check letters obtained from code above as suggested
+
+labels_thermal.df.both.trop_CTmax<- thermal.df.both.trop_CTmax%>% group_by(humidity) %>% summarize(mean = mean(set_temp),sd=sd(set_temp))
+
+#labels_abundance$label <- c()
+write.csv(thermal.df_CTmax,"labels_thermal_CTmax.csv")
+
+
+
+humidity_cols <- c(
+  "30" = "#E76F51",  # dry
+  "50" = "#E9C46A",  # intermediate
+  "90" = "#2A9D8F"   # humid
+)
+
+
+
+p_ctmax_trop_all<- ggplot(thermal.df.both.trop_CTmax, aes(x=humidity, y=set_temp, fill=humidity),add = "jitter") +
+  theme_bw(base_size = 15)+
+  geom_violin(scale = "width",
+              color = "black",linewidth = 0.5,alpha=0.5) + 
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3,
+               color = "black")  +
+   geom_jitter(color="black", size=2, alpha=0.6, position = "jitter", shape = 16)+
+  scale_fill_manual(values = c(
+    "#E76F51","#E9C46A","#2A9D8F"))+
+  xlab("Humidity") + 
+  ylab("CTmax") + # Improve axis labels
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35),
+        panel.grid.major = element_blank(),  #remove major-grid labels
+        panel.grid.minor = element_blank()
+        )+
+  #facet_wrap(~humidity)+
+  ylim(NA,54)+guides(fill=guide_legend(title="Species"))
+
+p_ctmax_trop_all
+
+ggsave("p_ctmax.tiff", units="in",width = 12, height = 9,device='tiff', dpi=300)
+
+```
+
+## CTmax-Subtropical
+
+### Sample summary subtropical
+
+```{r}
+
+# sp1	-	Brachiaphodius sp. (Sub)
+# sp2	- Aparammoecius sp.     (Sub)
+
+
+library(dplyr)
+
+# Summary of species count and total individuals per metric and humidity
+humidity_summary_subtropics <- thermal.df.both.subtropics %>%
+  filter(site == "subtropics") %>%   # ensures only tropical species are used
+  group_by(metric, humidity) %>%
+  summarise(
+    n_species = n_distinct(species),
+    total_individuals = n(),
+    .groups = "drop"
+  )
+
+print(humidity_summary_subtropics)
+# Save both summary tables to CSV
+write_csv(humidity_summary_subtropics, "subtropical_humidity_experiment_summary.csv")
+
+# Count of individuals per species across metric and humidity treatments
+species_detail_summary_subtropics <- thermal.df.both.subtropics %>%
+  filter(site == "subtropics") %>%
+  group_by(metric, humidity, species) %>%
+  summarise(
+    n_individuals = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(metric, humidity, desc(n_individuals))
+
+print(species_detail_summary_subtropics)
+
+write_csv(species_detail_summary_subtropics, "subtropical_species_counts_supplementary.csv")
+```
+
+
+```{r}
+
+# Check the normality-CTmax
+ggdensity(thermal.df.both.subtropics_CTmax$set_temp, 
+          main = "Density plot of CTmax",
+          xlab = "CTmax")  # looks fine
+ggqqplot(thermal.df.both.subtropics_CTmax$set_temp)
+
+hist(thermal.df.both.subtropics_CTmax$set_temp, main="Histogram of CTmax", xlab="", breaks=10) # looks not good
+skewness(thermal.df.both.subtropics_CTmax$set_temp, na.rm = TRUE) # 0.130749 positive
+shapiro.test(as.numeric(thermal.df.both.subtropics_CTmax$set_temp))#p= 0.01744 not normal. Will transform
+
+# log transform for moderate positive skewed
+thermal.df.both.subtropics_CTmax$set_temp.lg<-log10(thermal.df.both.subtropics_CTmax$set_temp)
+shapiro.test(as.numeric(thermal.df.both.subtropics_CTmax$set_temp.lg))#p= 0.01939 not normal
+
+
+# Transform data to be normal
+thermal.df.both.subtropics_CTmax$set_temp.trans<-sqrt(max((thermal.df.both.subtropics_CTmax$set_temp)+1)-(thermal.df.both.subtropics_CTmax$set_temp))
+
+shapiro.test(as.numeric(thermal.df.both.subtropics_CTmax$set_temp.trans))#p= 0.01444 not normal so will use 
+
+
+
+# Without considering the secies and only to see the differencesin CTmax when differnet humuidty level applied
+
+lm_ctmax_all_subtropics <- lmer(set_temp ~ humidity + (1 | species),data = thermal.df.both.subtropics_CTmax,
+  na.action = na.omit)
+
+par(mfrow = c(1, 2))
+plot(lm_ctmax_all_subtropics)
+qqnorm(residuals(lm_ctmax_all_subtropics))
+qqline(residuals(lm_ctmax_all_subtropics))
+
+# The rsidual vs fitted and the qq plots looks fine. So will stick into the current model 
+
+overdisp_fun <- overdisp_fun <- function(model) {
+    rdf <- df.residual(model)
+    rp <- residuals(model,type="pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+    c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+
+
+#overdisp_fun
+overdisp_fun(lm_ctmax_all_subtropics) #0.2502809 not over dispersed
+
+
+#pp_check(abundance_best) %>% plot()
+model_check_lm_ctmax_all_subtropics<-check_model(lm_ctmax_all_subtropics)
+print(model_check_lm_ctmax_all_subtropics)
+ggsave("model_check_lm_ctmax_all_subtropics.tiff", units="in",width = 16, height = 12,device='tiff', dpi=300)
+
+
+
+#Model summaries 
+summary(lm_ctmax_all_subtropics)
+Anova(lm_ctmax_all_subtropics,test="F")
+ref_grid(lm_ctmax_all_subtropics)
+ref_grid(lm_ctmax_all_subtropics) @ grid
+
+# Calculate the marginal mean
+em_lm_ctmax_all_subtropics<-emmeans(lm_ctmax_all_subtropics,~humidity,
+                         type="response")
+em_lm_ctmax_all_subtropics.con<-contrast(em_lm_ctmax_all_subtropics)
+pairs(em_lm_ctmax_all_subtropics, by=NULL)
+plot(em_lm_ctmax_all_subtropics)
+
+# extract letters
+class(em_lm_ctmax_all_subtropics)
+emmeans:::cld.emmGrid(em_lm_ctmax_all_subtropics,Letter="abcdefg")
+
+pairs(em_lm_ctmax_all_subtropics) # to double-check letters obtained from code above as suggested
+
+labels_thermal.df.both.subtropics_CTmax<- thermal.df.both.subtropics_CTmax%>% group_by(humidity) %>% summarize(mean = mean(set_temp),sd=sd(set_temp))
+
+#labels_abundance$label <- c()
+#write.csv(thermal.df_CTmax_subtropics,"labels_thermal.df.both.subtropics_CTmax.csv")
+
+
+
+humidity_cols <- c(
+  "30" = "#E76F51",  # dry
+  "50" = "#E9C46A",  # intermediate
+  "90" = "#2A9D8F"   # humid
+)
+
+
+
+p_ctmax_trop_all_subtropics<- ggplot(thermal.df.both.subtropics_CTmax, aes(x=humidity, y=set_temp, fill=humidity),add = "jitter") +
+  theme_bw(base_size = 15)+
+  geom_violin(scale = "width",
+              color = "black",linewidth = 0.5,alpha=0.5) + 
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3,
+               color = "black")  +
+   geom_jitter(color="black", size=2, alpha=0.6, position = "jitter", shape = 16)+
+  scale_fill_manual(values = c(
+    "#E76F51","#E9C46A","#2A9D8F"))+
+  xlab("Humidity") + 
+  ylab("CTmax") + # Improve axis labels
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35),
+        panel.grid.major = element_blank(),  #remove major-grid labels
+        panel.grid.minor = element_blank()
+        )+
+  #facet_wrap(~humidity)+
+  ylim(NA,54)+guides(fill=guide_legend(title="Species"))
+
+p_ctmax_trop_all_subtropics
+
+ggsave("p_ctmax_trop_all_subtropics.tiff", units="in",width = 12, height = 9,device='tiff', dpi=300)
+
+```
+
+## Humidity level separately
+
+### Humidity at 30%
+
+```{r}
+## For humidity 30%
+
+glm_ctmax.30<- glm(set_temp~species,thermal.df_CTmax.30,na.action=na.omit,family = quasipoisson)
+Anova(glm_ctmax.30, test="F") 
+
+overdisp_fun <- overdisp_fun <- function(model) {
+    rdf <- df.residual(model)
+    rp <- residuals(model,type="pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+    c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+
+#overdisp_fun
+overdisp_fun(glm_ctmax.30) #p-value is 1.000000000  , the model is not overdispered
+
+#pp_check(abundance_best) %>% plot()
+model_check_glm_ctmax.30<-check_model(glm_ctmax.30)
+print(model_check_glm_ctmax.30)
+ggsave("model_check_glm_ctmax.30.tiff", units="in",width = 16, height = 12,device='tiff', dpi=300)
+
+#Model summaries 
+summary(glm_ctmax.30)
+Anova(glm_ctmax.30)
+anova(glm_ctmax.30)
+plot(glm_ctmax.30)
+ref_grid(glm_ctmax.30)
+ref_grid(glm_ctmax.30) @ grid
+
+# Calculate the marginal mean
+em_ctmax.30<-emmeans(glm_ctmax.30,~species,
+                         type="response")
+em_ctmax.30.con<-contrast(em_ctmax.30)
+pairs(em_ctmax.30, by=NULL)
+plot(em_ctmax.30)
+
+# extract letters
+class(em_ctmax.30.con)
+emmeans:::cld.emmGrid(em_ctmax.30.con,Letter="abcdefg")
+pairs(em_ctmax.30.con) # to double-check letters obtained from code above as suggested
+
+labels_ctmax.30<-thermal.df_CTmax.30%>% group_by(species) %>% summarize(mean = mean(set_temp),sd=sd(set_temp))
+
+labels_ctmax.30$label <- c("d","c","b","b","a","b")
+write.csv(labels_ctmax.30,"labels_ctmax.30.csv")
+
+
+p_ctmax.30<- ggplot(thermal.df_CTmax.30, aes(x=species, y=set_temp, fill=species),
+                                add = "jitter") +
+  theme_bw(base_size = 15)+
+  geom_boxplot(width=0.6,alpha=0.5, linewidth = 0.5,fill = "#E76F51") +
+  geom_jitter(color="black", size=2, alpha=0.6, position = "jitter", shape = 16)+
+  xlab("Species") + 
+  ylab("CTmax.30") + # Improve axis labels
+  theme_bw(base_size = 30)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35)
+        )+
+  ylim(35,54)+guides(fill=guide_legend(title="Species"))
+
+p_ctmax.30
+ggsave("p_ctmax.30.tiff", units="in",width = 12, height = 9,device='tiff', dpi=300)
+
+```
+
+### Humidity at 50%
+
+```{r}
+glm_ctmax.50<- glm(set_temp~species,thermal.df_CTmax.50,na.action=na.omit,family = quasipoisson)
+Anova(glm_ctmax.50, test="F") 
+
+overdisp_fun <- overdisp_fun <- function(model) {
+    rdf <- df.residual(model)
+    rp <- residuals(model,type="pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+    c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+
+#overdisp_fun
+overdisp_fun(glm_ctmax.50) #p-value is 1.000000000  , the model is not overdispered
+
+#pp_check(abundance_best) %>% plot()
+model_check_glm_ctmax.50<-check_model(glm_ctmax.50)
+print(model_check_glm_ctmax.50)
+ggsave("model_check_glm_ctmax.50.tiff", units="in",width = 16, height = 12,device='tiff', dpi=300)
+
+#Model summaries 
+summary(glm_ctmax.50)
+Anova(glm_ctmax.50)
+anova(glm_ctmax.50)
+plot(glm_ctmax.50)
+ref_grid(glm_ctmax.50)
+ref_grid(glm_ctmax.50) @ grid
+
+# Calculate the marginal mean
+em_ctmax.50<-emmeans(glm_ctmax.50,~species,
+                         type="response")
+em_ctmax.50.con<-contrast(em_ctmax.50)
+pairs(em_ctmax.50, by=NULL)
+plot(em_ctmax.50)
+
+# extract letters
+class(em_ctmax.50.con)
+emmeans:::cld.emmGrid(em_ctmax.50.con,Letter="abcdefg")
+pairs(em_ctmax.50.con) # to double-check letters obtained from code above as suggested
+
+labels_ctmax.50<-thermal.df_CTmax.50%>% group_by(species) %>% summarize(mean = mean(set_temp),sd=sd(set_temp))
+
+labels_ctmax.50$label <- c("c","a","d","b","b","a","b")
+write.csv(labels_ctmax.50,"labels_ctmax.50.csv")
+
+p_ctmax.50<- ggplot(thermal.df_CTmax.50, aes(x=species, y=set_temp, fill=species),
+                                add = "jitter") +
+  theme_bw(base_size = 15)+
+  geom_boxplot(width=0.6,alpha=0.5) +
+  geom_jitter(color="black", size=2, alpha=0.6, position = "jitter")+
+  xlab("Species") + 
+  ylab("CTmax.50") + # Improve axis labels
+  theme_bw(base_size = 30)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =30),
+        plot.title = element_text(size = 35)
+        )+
+  scale_fill_manual(values = c("MSP_01" = "green4",
+                               "MSP_05"="#00AFBB",
+                               "MSP_06"="#FC4E07",
+                               "MSP_07"="#E69F00",
+                               "MSP_09"="#F4EDCA",
+                               "MSP_20"="#C3D7A4",
+                               "MSP_41"="#CC79A7"
+                               ))+
+  ylim(38,52)+guides(fill=guide_legend(title="Species"))
+
+p_ctmax.50
+ggsave("p_ctmax.50.tiff", units="in",width = 12, height = 9,device='tiff', dpi=300)
+
+```
+
+### Humidity at 90%
+
+```{r}
+# Some species do not have enough individuals for analysis. Therefore the have removed from the 90% analysis
+
+glm_ctmax.90<- glm(set_temp~species,thermal.df_CTmax.90,na.action=na.omit,family = quasipoisson)
+Anova(glm_ctmax.90, test="F") 
+
+overdisp_fun <- overdisp_fun <- function(model) {
+    rdf <- df.residual(model)
+    rp <- residuals(model,type="pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+    c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+
+#overdisp_fun
+overdisp_fun(glm_ctmax.90) #p-value is 1.00000000, the model is not overdispered
+
+#pp_check(abundance_best) %>% plot()
+model_check_glm_ctmax.90<-check_model(glm_ctmax.90)
+print(model_check_glm_ctmax.90)
+ggsave("model_check_glm_ctmax.90.tiff", units="in",width = 16, height = 12,device='tiff', dpi=300)
+
+# humidity at 90% does not show any significant differences between species
+
+labels_ctmax.90<-thermal.df_CTmax.90%>% group_by(species) %>% summarize(mean = mean(set_temp),sd=sd(set_temp))
+write.csv(labels_ctmax.90,"labels_ctmax.90.csv")
+
+p_ctmax.90<- ggplot(thermal.df_CTmax.90, aes(x=species, y=set_temp, fill=species),
+                                add = "jitter") +
+  theme_bw(base_size = 15)+
+  geom_boxplot(width=0.6,alpha=0.5) +
+  geom_jitter(color="black", size=2, alpha=0.6, position = "jitter")+
+  xlab("Species") + 
+  ylab("CTmax.90") + # Improve axis labels
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35)
+        )+
+  scale_fill_manual(values = c("MSP_01" = "green4",
+                               "MSP_05"="#00AFBB",
+                               "MSP_06"="#FC4E07",
+                               "MSP_07"="#E69F00",
+                               "MSP_09"="#F4EDCA",
+                               "MSP_20"="#C3D7A4",
+                               "MSP_41"="#CC79A7"
+                               ))+
+  ylim(38,52)+guides(fill=guide_legend(title="Species"))
+
+p_ctmax.90
+
+ggsave("p_ctmax.90.tiff", units="in",width = 16, height = 9,device='tiff', dpi=600)
+```
+
+## Species effect
+
+```{r}
+
+
+thermal.df.both.trop_CTmax$species <- 
+  factor(thermal.df.both.trop_CTmax$species)
+
+thermal.df.both.trop_CTmax$humidity <- 
+  factor(
+    thermal.df.both.trop_CTmax$humidity,
+    levels = c("30%", "50%", "90%")
+  )
+
+
+lm_ctmax_sp <- lm(set_temp.lg ~ humidity * species,data = thermal.df.both.trop_CTmax,na.action = na.omit)
+
+
+
+overdisp_fun <- overdisp_fun <- function(model) {
+    rdf <- df.residual(model)
+    rp <- residuals(model,type="pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+    c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+
+
+#overdisp_fun
+overdisp_fun(lm_ctmax_sp) #p-value is 1.000000e+00   , the model is overdispered
+
+
+#pp_check(abundance_best) %>% plot()
+model_check_lm_ctmax_sp<-check_model(lm_ctmax_sp)
+print(model_check_lm_ctmax_sp)
+ggsave("model_check_lm_ctmax_sp.tiff", units="in",width = 16, height = 12,device='tiff', dpi=300)
+
+
+
+#Model summaries 
+summary(lm_ctmax_sp)
+Anova(lm_ctmax_sp,test="F")
+anova(lm_ctmax_sp)
+plot(lm_ctmax_sp)
+ref_grid(lm_ctmax_sp)
+ref_grid(lm_ctmax_sp) @ grid
+
+# Calculate the marginal mean
+em_lm_ctmax_sp<-emmeans(lm_ctmax_sp,~humidity | species,
+                         type="response")
+em_lm_ctmax_sp.con<-contrast(em_lm_ctmax_sp)
+pairs(em_lm_ctmax_sp, by=NULL)
+plot(em_lm_ctmax_sp)
+
+# extract letters
+class(em_lm_ctmax_sp.con)
+emmeans:::cld.emmGrid(em_lm_ctmax_sp,Letter="abcdefg")
+
+pairs(em_lm_ctmax_all.con) # to double-check letters obtained from code above as suggested
+
+labels_thermal.df.both.trop_CTmax<- thermal.df.both.trop_CTmax%>% group_by(humidity) %>% summarize(mean = mean(set_temp),sd=sd(set_temp))
+
+#labels_abundance$label <- c()
+write.csv(thermal.df_CTmax,"labels_thermal_CTmax.csv")
+
+
+```
+
+# Analysis for CTmin
+
+### CTmin-Tropical
+
+```{r}
+
+# Check the normality-CTmax
+ggdensity(thermal.df.both.trop_CTmin$set_temp, 
+          main = "Density plot of CTmin",
+          xlab = "CTmin")  # looks fine
+ggqqplot(thermal.df.both.trop_CTmin$set_temp)
+
+hist(thermal.df.both.trop_CTmin$set_temp, main="Histogram of CTmin", xlab="", breaks=10) # looks fine
+skewness(thermal.df.both.trop_CTmin$set_temp, na.rm = TRUE) # 0.7305839 positive
+shapiro.test(as.numeric(thermal.df.both.trop_CTmin$set_temp))#p=0.0007396 not normal. Will transform
+
+# log transform for moderate positive skewed
+thermal.df.both.trop_CTmin$set_temp.lg<-log10(thermal.df.both.trop_CTmin$set_temp)
+shapiro.test(as.numeric(thermal.df.both.trop_CTmin$set_temp.lg))#p= 0.0002025 still not normal
+
+
+
+# sqrt transform for moderate positive skewed
+thermal.df.both.trop_CTmin$set_temp.sqrt<-sqrt(thermal.df.both.trop_CTmin$set_temp)
+shapiro.test(as.numeric(thermal.df.both.trop_CTmin$set_temp.sqrt))#p= 0.1908 normal
+
+
+# Without considering the secies and only to see the differences in CTmax when different humidity level applied
+
+lm_ctmin_all<- lmer(set_temp.sqrt~humidity+(1|species),
+                 thermal.df.both.trop_CTmin,na.action=na.omit)
+
+plot(lm_ctmin_all)
+qqnorm(resid(lm_ctmin_all))
+qqline(resid(lm_ctmin_all))
+check_heteroscedasticity(lm_ctmin_all) #detected (p = 0.004).
+
+
+
+overdisp_fun <- overdisp_fun <- function(model) {
+    rdf <- df.residual(model)
+    rp <- residuals(model,type="pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+    c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+
+
+#overdisp_fun
+overdisp_fun(lm_ctmin_all) #p-value is 1.000000e+00   , the model is not overdispered
+
+
+#pp_check(abundance_best) %>% plot()
+model_check_lm_ctmin_all<-check_model(lm_ctmin_all)
+print(model_check_lm_ctmin_all)
+ggsave("model_check_lm_ctmin_all.tiff", units="in",width = 16, height = 12,device='tiff', dpi=300)
+
+
+
+#Model summaries 
+summary(lm_ctmin_all)
+Anova(lm_ctmin_all,test="F")
+anova(lm_ctmin_all)
+plot(lm_ctmin_all)
+ref_grid(lm_ctmin_all)
+ref_grid(lm_ctmin_all) @ grid
+
+# Calculate the marginal mean
+em_lm_ctmin_all<-emmeans(lm_ctmin_all,~humidity,
+                         type="response")
+em_lm_ctmin_all.con<-contrast(em_lm_ctmin_all)
+pairs(em_lm_ctmin_all, by=NULL)
+plot(em_lm_ctmin_all)
+
+# extract letters
+class(em_lm_ctmin_all.con)
+emmeans:::cld.emmGrid(em_lm_ctmin_all.con,Letter="abcdefg")
+
+pairs(em_lm_ctmin_all.con) # to double-check letters obtained from code above as suggested
+
+labels_thermal.df.both.trop_CTmin<- thermal.df.both.trop_CTmin%>% group_by(humidity) %>% summarize(mean = mean(set_temp),sd=sd(set_temp))
+
+#labels_abundance$label <- c()
+write.csv(thermal.df_CTmin,"labels_thermal_CTmin.csv")
+
+CTmin_cols <- c(
+  "30" = "#56B4E9",  # light blue
+  "50" = "#009E73",  # blue-green
+  "90" = "#0072B2"   # deep blue
+)
+
+p_ctmin_trop_all<- ggplot(thermal.df.both.trop_CTmin, aes(x=humidity, y=set_temp, fill=humidity),add = "jitter") +
+  theme_bw(base_size = 15)+
+  geom_violin(scale = "width",
+              color = "black",linewidth = 0.5,alpha=0.5) + 
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 1.5,
+               color = "black")  +
+  geom_jitter(color="black", size=2, alpha=0.6, position = "jitter", shape = 16)+
+  scale_fill_manual(values = c(
+    "#56B4E9","#009E73","#0072B2"))+
+  xlab("Humidity") + 
+  ylab("CTmin") + # Improve axis labels
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35),
+        panel.grid.major = element_blank(),  #remove major-grid labels
+        panel.grid.minor = element_blank()
+        )+
+  #facet_wrap(~humidity)+
+  ylim(NA,20)+guides(fill=guide_legend(title="Species"))
+
+p_ctmin_trop_all
+
+ggsave("p_ctmin.tiff", units="in",width = 12, height = 9,device='tiff', dpi=300)
+
+```
+
+### CTmin-Subtropical
+
+```{r}
+
+# Check the normality-CTmax
+ggdensity(thermal.df.both.subtropics_CTmin$set_temp, 
+          main = "Density plot of CTmin",
+          xlab = "CTmin")  # looks fine
+ggqqplot(thermal.df.both.subtropics_CTmin$set_temp)
+
+hist(thermal.df.both.subtropics_CTmin$set_temp, main="Histogram of CTmin", xlab="", breaks=10) # looks right skewed
+skewness(thermal.df.both.subtropics_CTmin$set_temp, na.rm = TRUE) # 0.9440747 positive
+shapiro.test(as.numeric(thermal.df.both.subtropics_CTmin$set_temp))#p=0.1022  normal
+
+
+
+# Without considering the secies and only to see the differences in CTmax when different humidity level applied
+
+lm_ctmin_all_subtropics<- lmer(set_temp~humidity+(1|species),
+                 thermal.df.both.subtropics_CTmin,na.action=na.omit)
+
+par(mfrow = c(1, 2))
+plot(lm_ctmin_all_subtropics)
+qqnorm(residuals(lm_ctmin_all_subtropics))
+qqline(residuals(lm_ctmin_all_subtropics))
+check_heteroscedasticity(lm_ctmin_all_subtropics) #OK: Error variance appears to be homoscedastic (p = 0.480).
+
+
+overdisp_fun <- overdisp_fun <- function(model) {
+    rdf <- df.residual(model)
+    rp <- residuals(model,type="pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+    c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+
+
+#overdisp_fun
+overdisp_fun(lm_ctmin_all_subtropics) #p-value is 0.2343379  , the model is not overdispered
+
+
+#pp_check(abundance_best) %>% plot()
+model_check_lm_ctmin_all_subtropics<-check_model(lm_ctmin_all_subtropics)
+print(model_check_lm_ctmin_all_subtropics)
+ggsave("model_check_lm_ctmin_all_subtropics.tiff", units="in",width = 16, height = 12,device='tiff', dpi=300)
+
+
+#Model summaries 
+summary(lm_ctmin_all_subtropics)
+Anova(lm_ctmin_all_subtropics,test="F")
+anova(lm_ctmin_all_subtropics)
+plot(lm_ctmin_all_subtropics)
+ref_grid(lm_ctmin_all_subtropics)
+ref_grid(lm_ctmin_all_subtropics) @ grid
+
+# Calculate the marginal mean
+em_lm_ctmin_all_subtropics<-emmeans(lm_ctmin_all_subtropics,~humidity,
+                         type="response")
+em_lm_ctmin_all_subtropics.con<-contrast(em_lm_ctmin_all_subtropics)
+pairs(em_lm_ctmin_all_subtropics, by=NULL)
+plot(em_lm_ctmin_all_subtropics)
+
+# extract letters
+class(em_lm_ctmin_all_subtropics.con)
+emmeans:::cld.emmGrid(em_lm_ctmin_all_subtropics.con,Letter="abcdefg")
+
+pairs(em_lm_ctmin_all_subtropics.con) # to double-check letters obtained from code above as suggested
+
+labels_thermal.df.both.subtropics_CTmin<- thermal.df.both.subtropics_CTmin%>% group_by(humidity) %>% summarize(mean = mean(set_temp),sd=sd(set_temp))
+
+#labels_abundance$label <- c()
+write.csv(thermal.df.both.subtropics_CTmin,"labels_thermal.df.both.subtropics_CTmin.csv")
+
+CTmin_cols <- c(
+  "30" = "#56B4E9",  # light blue
+  "50" = "#009E73",  # blue-green
+  "90" = "#0072B2"   # deep blue
+)
+
+p_ctmin_subtrop_all<- ggplot(thermal.df.both.subtropics_CTmin, aes(x=humidity, y=set_temp, fill=humidity),add = "jitter") +
+  theme_bw(base_size = 15)+
+  geom_violin(scale = "width",
+              color = "black",linewidth = 0.5,alpha=0.5) + 
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 1.5,
+               color = "black")  +
+  geom_jitter(color="black", size=2, alpha=0.6, position = "jitter", shape = 16)+
+  scale_fill_manual(values = c(
+    "#56B4E9","#009E73","#0072B2"))+
+  xlab("Humidity") + 
+  ylab("CTmin") + # Improve axis labels
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35),
+        panel.grid.major = element_blank(),  #remove major-grid labels
+        panel.grid.minor = element_blank()
+        )+
+  #facet_wrap(~humidity)+
+  ylim(NA,20)+guides(fill=guide_legend(title="Species"))
+
+p_ctmin_subtrop_all
+
+ggsave("p_ctmin_subtrop_all.tiff", units="in",width = 12, height = 9,device='tiff', dpi=300)
+
+```
+
+### Humidity at 30%
+
+```{r}
+## For humidity 30%
+
+lm_ctmin.30<-lm(set_temp~species,thermal.df_CTmin.30,na.action=na.omit)
+Anova(lm_ctmin.30, test="F") 
+
+overdisp_fun <- overdisp_fun <- function(model) {
+    rdf <- df.residual(model)
+    rp <- residuals(model,type="pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+    c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+
+#overdisp_fun
+overdisp_fun(lm_ctmin.30) #p-value is 0.6308762, the model is not overdispered
+
+#pp_check(abundance_best) %>% plot()
+model_check_lm_ctmin.30<-check_model(lm_ctmin.30)
+print(model_check_lm_ctmin.30)
+ggsave("model_check_lm_ctmin.30.tiff", units="in",width = 16, height = 12,device='tiff', dpi=300)
+
+#Model summaries 
+summary(lm_ctmin.30)
+Anova(lm_ctmin.30)
+anova(lm_ctmin.30)
+plot(lm_ctmin.30)
+ref_grid(lm_ctmin.30)
+ref_grid(lm_ctmin.30) @ grid
+
+# Calculate the marginal mean
+em_ctmin.30<-emmeans(lm_ctmin.30,~species,
+                         type="response")
+em_ctmin.30.con<-contrast(em_ctmin.30)
+pairs(em_ctmin.30, by=NULL)
+plot(em_ctmin.30)
+
+# extract letters
+class(em_ctmin.30.con)
+emmeans:::cld.emmGrid(em_ctmin.30.con,Letter="abcdefg")
+pairs(em_ctmax.30.con) # to double-check letters obtained from code above as suggested
+
+labels_ctmin.30<-thermal.df_CTmin.30%>% group_by(species) %>% summarize(mean = mean(set_temp),sd=sd(set_temp))
+
+labels_ctmin.30$label <- c("bc","d","a","a","ab","c","c")
+write.csv(labels_ctmin.30,"labels_ctmin.30.csv")
+
+p_ctmin.30<- ggplot(thermal.df_CTmin.30, aes(x=species, y=set_temp, fill=species),
+                                add = "jitter") +
+  theme_bw(base_size = 15)+
+  geom_boxplot(width=0.6,alpha=0.5) +
+  geom_jitter(color="black", size=2, alpha=0.6, position = "jitter")+
+  xlab("Species") + 
+  ylab("CTmin.30") + # Improve axis labels
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35)
+        )+
+  scale_fill_manual(values = c("MSP_01" = "green4",
+                               "MSP_05"="#00AFBB",
+                               "MSP_06"="#FC4E07",
+                               "MSP_07"="#E69F00",
+                               "MSP_09"="#F4EDCA",
+                               "MSP_20"="#C3D7A4",
+                               "MSP_41"="#CC79A7"
+                               ))+
+  ylim(0,12)+guides(fill=guide_legend(title="Species"))
+
+p_ctmin.30
+ggsave("p_ctmin.30.tiff", units="in",width = 12, height = 9,device='tiff', dpi=600)
+```
+
+## CTmax and CTmax together
+
+```{r}
+
+thermal_cols <- c(
+  "CTmax.30%" = "#E76F51",
+  "CTmax.50%" = "#E9C46A",
+  "CTmax.90%" = "#2A9D8F",
+  "CTmin.30%" = "#56B4E9",
+  "CTmin.50%" = "#009E73",
+  "CTmin.90%" = "#0072B2"
+)
+
+
+# For all species together
+p_ct_trop<- ggplot(thermal.df.both.trop, aes(x=humidity, y=set_temp, fill=metric, group = site.metric),add = "jitter") +
+  theme_bw(base_size = 15)+
+  geom_violin(scale = "width",
+              color = "black",linewidth = 0.5) + 
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 1.5,
+               color = "black")  +
+  geom_jitter(color="black", size=2, alpha=0.6, position = "jitter", shape = 16)+
+  xlab("Species") + 
+  ylab("CTmin.50") + # Improve axis labels
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35),
+        panel.grid.major = element_blank(),  #remove major-grid labels
+        panel.grid.minor = element_blank()
+        )+
+  scale_fill_manual(values = c("CTmax"="#FC4E07",
+                               "CTmin" = "#00AFBB"))+
+  ylim(-5,56)+guides(fill=guide_legend(title="Climate region")) #+
+ # scale_y_break(c(15, 30))
+
+p_ct_trop
+ggsave("p_ct_trop.tiff", units="in",width = 12, height = 9,device='tiff', dpi=300)
+
+
+p_ct_trop <- ggplot(
+  thermal.df.both.trop,
+  aes(
+    x = humidity,
+    y = set_temp,
+    fill = interaction(metric, humidity),
+    group = interaction(metric, humidity)
+  )
+) +
+  geom_violin(
+    scale = "width",
+    color = "black",
+    linewidth = 0.5
+  ) +
+  stat_summary(
+    fun = mean,
+    geom = "point",
+    size = 1.5,
+    color = "black"
+  ) +
+  geom_jitter(
+    color = "black",
+    size = 2,
+    alpha = 0.6,
+    width = 0.08,
+    shape = 16
+  ) +
+  scale_fill_manual(
+    values = thermal_cols,
+    breaks = c(
+      "CTmax.30%", "CTmax.50%", "CTmax.90%",
+      "CTmin30%", "CTmin.50%", "CTmin.90%"
+    ),
+    labels = c(
+      "CTmax – 30% RH",
+      "CTmax – 50% RH",
+      "CTmax – 90% RH",
+      "CTmin – 30% RH",
+      "CTmin – 50% RH",
+      "CTmin – 90% RH"
+    )
+  ) +
+  labs(
+    x = "Relative humidity (%)",
+    y = "Critical thermal limit (°C)",
+    fill = "Thermal limit"
+  ) +
+  ylim(-5, 56) +
+  theme_bw(base_size = 35) +
+  theme(
+    legend.position = "right",
+    panel.background = element_blank(),
+    strip.background = element_blank(),
+    axis.text = element_text(size = 35),
+    text = element_text(size = 35),
+    axis.title = element_text(size = 35),
+    axis.text.x = element_text(size = 30),
+    axis.text.y = element_text(size = 35),
+    axis.title.x = element_text(size = 35),
+    axis.title.y = element_text(size = 40),
+    plot.title = element_text(size = 35),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+
+p_ct_trop
+```
+
+# Trait analysis
+
+### Data cleaning
+
+```{r}
+
+  
+# remove species MSP_04 ; too few samples!
+thermal.df.all <- thermal.df.all[thermal.df.all$species != "MSP_20",] 
+# remove species MSP_18 ; too few samples!
+thermal.df.all <- thermal.df.all[thermal.df.all$species != "MSP_18",] 
+# remove species sp3 ; too few samples!
+thermal.df.all <- thermal.df.all[thermal.df.all$species != "MSP_04",] 
+
+
+#thermal.df.all the ---- thermal data file 
+
+# Body traits-My data
+body_traits_1<- read.csv(file.path(dataDir,"body_traits_1.csv"),header = TRUE)
+
+# Body traits-AFEC
+body_traits_2<- read.csv(file.path(dataDir,"body_traits_2.csv"),header = TRUE)
+
+
+library(dplyr)
+
+thermal.df.both.traits<- thermal.df.both |>
+     dplyr::left_join(
+    body_traits_1 |>
+         dplyr::select(ID, species, width, length),
+    by = c("ID", "species")
+  )
+
+
+thermal.df.both.traits <- thermal.df.both.traits |>
+     dplyr::left_join(
+    body_traits_2 |>
+         dplyr::select(ID, species, width, length) |>
+         dplyr::mutate(ID = as.character(ID)),
+    by = c("ID", "species"),
+    suffix = c("", ".new")
+  ) |>
+     dplyr::mutate(
+    width = coalesce(width, width.new),
+    length = coalesce(length, length.new)
+  ) |>
+     dplyr::select(-width.new, -length.new)
+
+
+# Subset thermal data for tropics
+
+
+thermal.df.tropics.traits<- subset(thermal.df.both.traits,site=="tropics")
+
+thermal.df.tropics.traits_2 <- thermal.df.tropics.traits %>%
+  filter(!is.na(length))
+
+# Subset thermal data for based on thermal limit
+thermal.df.tropics.traits.CTmax<- subset(thermal.df.tropics.traits_2,metric=="CTmax")
+thermal.df.tropics.traits.CTmin<- subset(thermal.df.tropics.traits_2,metric=="CTmin")
+
+
+table(thermal.df.tropics.traits.CTmax$species,
+      thermal.df.tropics.traits.CTmax$humidity)
+
+
+table(thermal.df.tropics.traits.CTmin$species,
+      thermal.df.tropics.traits.CTmin$humidity)
+
+
+cor(thermal.df.tropics.traits.CTmax$length,
+    thermal.df.tropics.traits.CTmax$width,
+    use = "complete.obs")
+
+# CTmax
+# Check the normality-CTmax
+ggdensity(thermal.df.tropics.traits.CTmax$set_temp, 
+          main = "Density plot of CTmax",
+          xlab = "CTmax")  # looks right skewed
+ggqqplot(thermal.df.tropics.traits.CTmax$set_temp)
+
+hist(thermal.df.tropics.traits.CTmax$set_temp, main="Histogram of CTmax", xlab="", breaks=10) # looks right skewed
+skewness(thermal.df.tropics.traits.CTmax$set_temp, na.rm = TRUE) # 0.5470631
+shapiro.test(as.numeric(thermal.df.tropics.traits.CTmax$set_temp))#p= 0.005418 not normal. Will transform
+
+
+thermal.df.tropics.traits.CTmax$set_temp.lg<-log10(thermal.df.tropics.traits.CTmax$set_temp)
+
+
+# Check the normality-CTmax
+ggdensity(thermal.df.tropics.traits.CTmax$set_temp.lg, 
+          main = "Density plot of CTmax",
+          xlab = "CTmax")  # looks right skewed
+ggqqplot(thermal.df.tropics.traits.CTmax$set_temp.lg)
+
+hist(thermal.df.tropics.traits.CTmax$set_temp.lg, main="Histogram of CTmax", xlab="", breaks=10) # looks ok
+skewness(thermal.df.tropics.traits.CTmax$set_temp.lg, na.rm = TRUE) #0.4252439
+shapiro.test(as.numeric(thermal.df.tropics.traits.CTmax$set_temp.lg))#p= 0.03075 not normal will use glm
+
+
+
+
+
+# CTmin
+# Check the normality-CTmax
+ggdensity(thermal.df.tropics.traits.CTmin$set_temp, 
+          main = "Density plot of CTmin",
+          xlab = "CTmax")  # looks right skewed
+ggqqplot(thermal.df.tropics.traits.CTmin$set_temp)
+
+hist(thermal.df.tropics.traits.CTmin$set_temp, main="Histogram of CTmax", xlab="", breaks=10) # looks right skewed
+skewness(thermal.df.tropics.traits.CTmin$set_temp, na.rm = TRUE) # 0.8076478
+shapiro.test(as.numeric(thermal.df.tropics.traits.CTmin$set_temp))#p= 0.0005031 not normal. Will transform
+
+
+thermal.df.tropics.traits.CTmin$set_temp.lg<-log10(thermal.df.tropics.traits.CTmin$set_temp)
+
+
+# Check the normality-CTmax
+ggdensity(thermal.df.tropics.traits.CTmin$set_temp.lg, 
+          main = "Density plot of CTmin",
+          xlab = "CTmax")  # looks right skewed
+ggqqplot(thermal.df.tropics.traits.CTmin$set_temp.lg)
+
+hist(thermal.df.tropics.traits.CTmin$set_temp.lg, main="Histogram of CTmax", xlab="", breaks=10) # looks left skewed
+skewness(thermal.df.tropics.traits.CTmin$set_temp.lg, na.rm = TRUE) #-0.6255825
+shapiro.test(as.numeric(thermal.df.tropics.traits.CTmin$set_temp.lg))#p= 0.001661 not normal will use glm
+
+
+
+
+```
+
+### Body traits vs CTmax and min
+
+for thsi analysis i have only used species form the tropical forest given we were not able to cathc larger body sized beetles form subtropcial forests
+
+#### CTmax
+
+```{r}
+library(lme4)
+library(lmerTest)
+library(emmeans)
+
+library(glmmTMB)
+
+set.seed(1234)
+
+thermal.df.tropics.traits.CTmax <- thermal.df.tropics.traits.CTmax |>mutate(humidity = factor(humidity))
+
+# Length transform
+thermal.df.tropics.traits.CTmax <- thermal.df.tropics.traits.CTmax |>
+  mutate(
+    length_z = as.numeric(scale(length))
+  )
+
+
+model_length_species <- glm(set_temp ~ humidity * length_z + species,family = gaussian(),data = thermal.df.tropics.traits.CTmax)
+
+overdisp_fun <- overdisp_fun <- function(model) {
+    rdf <- df.residual(model)
+    rp <- residuals(model,type="pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+    c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+
+
+#overdisp_fun
+overdisp_fun(model_length_species) #p-value is 0.2906082   , the model is not overdispered
+
+
+summary(model_length_species)
+Anova(model_length_species)
+
+library(emmeans)
+
+emtrends(model_length_species,~ humidity ,var = "length_z")
+
+
+emm_length2 <- emmeans(model_length_species,~ humidity * length_z,at = list(length_z = c(-1, 0, 1)))
+
+emm_length2
+
+emm_df <- as.data.frame(emm_length2)
+emm_df$body_size <- factor(emm_df$length_z,levels = c(-1, 0, 1),labels = c("Small (−1 SD)", "Mean", "Large (+1 SD)"))
+
+contrast(emm_length2,interaction = c("pairwise", "pairwise"),adjust = "tukey")
+
+
+p_em_length_CTmax <- ggplot(emm_df,aes(x = humidity,y = emmean,group = body_size,linetype = body_size,colour = body_size)) +
+  geom_line(linewidth = 1.5) +
+  geom_point(size = 3) +
+  geom_errorbar(
+    aes(ymin = lower.CL, ymax = upper.CL),
+    width = 0.08,
+    linewidth = 0.6) +
+  scale_colour_manual(
+    values = c("Small (−1 SD)" = "#0072B2","Mean" = "#333333","Large (+1 SD)" = "#D55E00")) +
+  labs(x = "Relative humidity",y = "Estimated CTmax (°C)",linetype = "Body size",colour = "Body size") +
+   theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35),
+        panel.grid.major = element_blank(),  #remove major-grid labels
+        panel.grid.minor = element_blank()
+        )
+
+p_em_length_CTmax
+ggsave("p_em_length_CTmax.tiff", units="in",width = 16, height = 12,device='tiff', dpi=300)
+
+
+
+
+
+
+
+
+# Categorize continuous length_z into 3 groups in the raw data for the violins
+thermal.df.tropics.traits.CTmax <- thermal.df.tropics.traits.CTmax |>
+  mutate(
+    body_size_cat = case_when(
+      length_z <= -0.5 ~ "Small (−1 SD)",
+      length_z > -0.5 & length_z <= 0.5 ~ "Mean",
+      length_z > 0.5 ~ "Large (+1 SD)"
+    ),
+    body_size_cat = factor(body_size_cat, levels = c("Small (−1 SD)", "Mean", "Large (+1 SD)"))
+  )
+
+
+# The EMMeans for the interaction 
+emm_length2 <- emmeans(
+  model_length_species,
+  ~ humidity | length_z,
+  at = list(length_z = c(-1, 0, 1))
+)
+
+# 3. Extract the Compact Letter Display (CLD) for multiple comparisons
+cld(emm_length2, Letters = letters, adjust = "tukey")
+#cld_letters <- as.data.frame(cld_letters)
+
+# Clean up the letters (remove extra spaces)
+#cld_letters$.group <- trimws(cld_letters$.group)
+
+
+
+
+p_ctmax_body_RH<- ggplot(thermal.df.tropics.traits.CTmax, aes(x=body_size_cat, y=set_temp, fill=humidity),add = "jitter") +
+  theme_bw(base_size = 15)+
+  geom_violin(scale = "width",
+              color = "black",linewidth = 0.5,alpha=0.5) + 
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3,
+               color = "black")  +
+   geom_jitter(color="black", size=2, alpha=0.6, position = "jitter", shape = 16)+
+  scale_fill_manual(values = c(
+    "#E76F51","#E9C46A","#2A9D8F"))+
+  xlab("Humidity") + 
+  ylab("CTmax") + # Improve axis labels
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35),
+        panel.grid.major = element_blank(),  #remove major-grid labels
+        panel.grid.minor = element_blank()
+        )+
+  #facet_wrap(~humidity)+
+  ylim(NA,54)+guides(fill=guide_legend(title="Species"))
+
+p_ctmax_body_RH
+
+ggsave("p_ctmax_body_RH.tiff", units="in",width = 12, height = 9,device='tiff', dpi=300)
+
+
+
+# CTmax changes
+
+levels(thermal.df.tropics.traits.CTmax$humidity)
+emm_change <- emmeans(model_length_species,~ humidity | length_z,at = list(length_z = c(-1, 0, 1)))
+
+
+emm_change <- emmeans(
+  model_length_species,
+  ~ humidity | length_z,
+  at = list(length_z = c(-1, 0, 1))
+)
+
+
+pairs(emm_change, adjust = "tukey")
+
+
+change_30_90 <- contrast(emm_change,method = list("30% - 90%" = c(1, 0, -1)),by = "length_z")
+
+
+change_30_90 <- contrast(
+  emm_change,
+  method = list("30% - 90%" = c(1, 0, -1)),
+  by = "length_z",
+  adjust = "holm"
+)
+
+summary(change_30_90, infer = TRUE)
+
+
+
+# extract letters
+class(change_30_90)
+emmeans:::cld.emmGrid(change_30_90,Letter="abcdefg")
+
+
+change_ci <- confint(change_30_90)
+
+change_df <- as.data.frame(change_ci)
+change_df
+
+
+
+
+change_df$body_size <- factor(change_df$length_z,
+  levels = c(-1, 0, 1),
+  labels = c("Small (−1 SD)","Mean","Large (+1 SD)"))
+
+
+
+
+p_em_length_change_CTmax<-ggplot(change_df,aes(x = body_size, y = estimate)) +
+  geom_hline(yintercept = 0,linetype = "dashed") +
+  geom_point(size = 3) +
+  geom_errorbar(
+    aes(ymin = lower.CL,ymax = upper.CL),width = 0.15) +
+  labs(x = "Body size",y = "CTmax decline from 30% to 90% RH (°C)")+
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35),
+        panel.grid.major = element_blank(),  #remove major-grid labels
+        panel.grid.minor = element_blank()
+        )
+
+p_em_length_change_CTmax
+ggsave("p_em_length_change_CTmax.tiff", units="in",width = 12, height = 12,device='tiff', dpi=300)
+
+```
+
+#### CTmax new figures
+
+```{r}
+library(tidyverse)
+library(emmeans)
+library(ggsignif) 
+
+# 1. Categorize continuous length_z into 3 groups
+thermal.df.tropics.traits.CTmax <- thermal.df.tropics.traits.CTmax |>
+  mutate(
+    body_size_cat = case_when(
+      length_z <= -0.5 ~ "Small (−1 SD)",
+      length_z > -0.5 & length_z <= 0.5 ~ "Mean",
+      length_z > 0.5 ~ "Large (+1 SD)"
+    ),
+    body_size_cat = factor(body_size_cat, levels = c("Small (−1 SD)", "Mean", "Large (+1 SD)"))
+  )
+
+# 2. Build the Plot with Accurate ggsignif Brackets
+p_ctmax_body_RH_new <- ggplot(thermal.df.tropics.traits.CTmax, aes(x = body_size_cat, y = set_temp, fill = humidity)) +
+  theme_bw(base_size = 15) +
+  
+  # Violins
+  geom_violin(position = position_dodge(width = 0.9), scale = "width", color = "black", linewidth = 0.5, alpha = 0.5) + 
+  
+  # Jittered points (aligned inside violins)
+  geom_jitter(aes(color = humidity), size = 2, alpha = 0.6, shape = 16, 
+              position = position_jitterdodge(jitter.width = 0.1, dodge.width = 0.9)) +
+  
+  # Mean points
+  stat_summary(fun = mean, geom = "point", size = 3, color = "black", 
+               position = position_dodge(width = 0.9)) +
+               
+  # === SIGNIFICANCE BRACKETS BASED ON EMMEANS CLD ===
+  
+  # Small (-1 SD): 90%(a), 50%(ab), 30%(b)
+  geom_signif(
+    y_position = c(48, 48, 49), # Height of brackets
+    xmin = c(0.7, 1.0, 0.7),    # Left side (comparing V1-V2, V2-V3, V1-V3)
+    xmax = c(1.0, 1.3, 1.3),    # Right side
+    annotation = c("ns", "ns", "*"), 
+    tip_length = 0.02,
+    textsize = 6,
+    color = "black"
+  ) +
+  
+  # Mean: 90%(a), 50%(b), 30%(c)
+  geom_signif(
+    y_position = c(46.5, 46.5, 47.5), 
+    xmin = c(1.7, 2.0, 1.7),    
+    xmax = c(2.0, 2.3, 2.3),    
+    annotation = c("*", "*", "***"), 
+    tip_length = 0.02,
+    textsize = 6,
+    color = "black"
+  ) +
+  
+  # Large (+1 SD): 90%(a), 50%(b), 30%(c)
+  geom_signif(
+    y_position = c(52, 52, 53), 
+    xmin = c(2.7, 3.0, 2.7),    
+    xmax = c(3.0, 3.3, 3.3),    
+    annotation = c("*", "*", "***"), 
+    tip_length = 0.02,
+    textsize = 6,
+    color = "black"
+  ) +
+  # ==================================================
+
+  scale_fill_manual(values = c("#E76F51", "#E9C46A", "#2A9D8F")) +
+  scale_color_manual(values = c("#E76F51", "#E9C46A", "#2A9D8F")) + 
+  labs(x = "Body Size Category", y = "CTmax", fill = "Humidity", color = "Humidity") + 
+  theme_bw(base_size = 35) +
+  theme(
+    legend.position = "right",
+    panel.background = element_blank(),
+    strip.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 35),
+    axis.title = element_text(size = 35),
+    axis.text.x = element_text(size = 30),
+    axis.text.y = element_text(size = 35),
+    axis.title.x = element_text(size = 35),
+    axis.title.y = element_text(size = 40)
+  ) +
+  ylim(NA, 54) # Ensures the top brackets aren't cut off
+
+
+p_ctmax_body_RH_new
+ggsave("p_ctmax_body_RH_new.tiff", units="in",width = 12, height = 9,device='tiff', dpi=300)
+```
+
+```{r}
+# Install these if you don't have them: 
+# install.packages(c("multcomp", "multcompView", "dplyr"))
+
+library(ggplot2)
+library(dplyr)
+library(lme4)
+library(glmmTMB)
+library(emmeans)
+library(multcomp)
+library(multcompView)
+
+
+
+# 1. Categorize continuous length_z into 3 groups in the raw data for the violins
+thermal.df.tropics.traits.CTmax <- thermal.df.tropics.traits.CTmax |>
+  mutate(
+    body_size_cat = case_when(
+      length_z <= -0.5 ~ "Small (−1 SD)",
+      length_z > -0.5 & length_z <= 0.5 ~ "Mean",
+      length_z > 0.5 ~ "Large (+1 SD)"
+    ),
+    body_size_cat = factor(body_size_cat, levels = c("Small (−1 SD)", "Mean", "Large (+1 SD)"))
+  )
+
+# 2. Run the EMMeans for the interaction (which you already had)
+emm_length2 <- emmeans(
+  model_length_species,
+  ~ humidity * length_z,
+  at = list(length_z = c(-1, 0, 1))
+)
+
+# 3. Extract the Compact Letter Display (CLD) for multiple comparisons
+cld_letters <- cld(emm_length2, Letters = letters, adjust = "tukey")
+cld_letters <- as.data.frame(cld_letters)
+
+# Clean up the letters (remove extra spaces)
+cld_letters$.group <- trimws(cld_letters$.group)
+
+# Format the body_size column in the letters dataframe to exactly match the plot
+cld_letters$body_size_cat <- factor(cld_letters$length_z,
+  levels = c(-1, 0, 1),
+  labels = c("Small (−1 SD)", "Mean", "Large (+1 SD)")
+)
+
+# 4. Set a Y-axis position for where the letters should float above the violins
+# We will place them slightly above the maximum CTmax value
+y_max <- max(thermal.df.tropics.traits.CTmax$set_temp, na.rm = TRUE)
+cld_letters$y_pos <- y_max + 0.8
+
+
+
+
+
+
+
+# 1. Ensure the cld_letters dataframe is set up correctly
+# (Assuming you already ran the cld() extraction from the previous step)
+cld_letters <- as.data.frame(cld(emm_length2, Letters = letters, adjust = "tukey"))
+cld_letters$.group <- trimws(cld_letters$.group)
+cld_letters$body_size_cat <- factor(cld_letters$length_z,
+  levels = c(-1, 0, 1),
+  labels = c("Small (−1 SD)", "Mean", "Large (+1 SD)")
+)
+y_max <- max(thermal.df.tropics.traits.CTmax$set_temp, na.rm = TRUE)
+cld_letters$y_pos <- y_max + 0.8
+
+# 2. Build the Violin Plot with Swapped Axes
+p_violin_CTmax_swapped <- ggplot(thermal.df.tropics.traits.CTmax, aes(x = body_size_cat, y = set_temp, fill = humidity)) +
+  # Draw the violins
+  geom_violin(position = position_dodge(0.8), alpha = 0.4, color = "black", linewidth = 0.8) +
+  # Add small boxplots inside the violins
+  geom_boxplot(position = position_dodge(0.8), width = 0.2, alpha = 0.8, outlier.shape = NA) +
+  
+  # Add the significance letters above the violins
+  # Note: group is now set to humidity to dodge correctly alongside the violins
+  geom_text(
+    data = cld_letters,
+    aes(x = body_size_cat, y = y_pos, label = .group, group = humidity),
+    position = position_dodge(0.8),
+    size = 10,       
+    fontface = "bold",
+    show.legend = FALSE
+  ) +
+  
+  # Colors mapping for humidity (using a colorblind-friendly palette)
+  scale_fill_manual(
+    values = c("30%" = "#E69F00", "50%" = "#56B4E9", "90%" = "#009E73")
+  ) +
+  
+  # Labels and Theme
+  labs(
+    x = "Body size", 
+    y = "CTmax (°C)", 
+    fill = "Relative humidity"
+  ) +
+  theme_bw(base_size = 15) +
+  theme(
+    panel.background = element_blank(),
+    strip.background = element_blank(),
+    axis.text = element_text(size = 35),
+    text = element_text(size = 35),
+    axis.title = element_text(size = 35),
+    axis.text.x = element_text(size = 30),
+    axis.text.y = element_text(size = 35),
+    axis.title.x = element_text(size = 35),
+    axis.title.y = element_text(size = 40),
+    plot.title = element_text(size = 35),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "top" 
+  )
+
+p_violin_CTmax_swapped
+
+# Save the plot
+ggsave("p_violin_CTmax_swapped.tiff", plot = p_violin_CTmax_swapped, units = "in", width = 16, height = 12, device = 'tiff', dpi = 300)
+```
+
+#### CTmin
+
+```{r}
+
+
+thermal.df.tropics.traits.CTmin <- thermal.df.tropics.traits.CTmin |>mutate(humidity = factor(humidity))
+
+
+# Length transform
+thermal.df.tropics.traits.CTmin <- thermal.df.tropics.traits.CTmin |>
+  mutate(length_z = as.numeric(scale(length)))
+
+
+model_length_species_CTmin <- glmmTMB(set_temp ~ humidity * length_z + species,family = gaussian(), data = thermal.df.tropics.traits.CTmin)
+
+
+overdisp_fun <- overdisp_fun <- function(model) {
+    rdf <- df.residual(model)
+    rp <- residuals(model,type="pearson")
+    Pearson.chisq <- sum(rp^2)
+    prat <- Pearson.chisq/rdf
+    pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+    c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+}
+
+
+#overdisp_fun
+overdisp_fun(model_length_species_CTmin) #p-value is 1.075495e-27   , the model is not overdispered
+
+par(mfrow = c(2, 2))
+#plot(model_length_species_CTmin)
+performance::check_model(model_length_species_CTmin)
+
+
+plot(fitted(model_length_species_CTmin),
+  residuals(model_length_species_CTmin))
+
+abline(h = 0, lty = 2)
+
+
+
+
+model_CTmin_het <- glmmTMB(set_temp ~ humidity * length_z + species,dispformula = ~ humidity,family = gaussian(),data = thermal.df.tropics.traits.CTmin)
+
+summary(model_CTmin_het)
+
+
+model_CTmin_het_species <- glmmTMB(set_temp ~ humidity * length_z + species,dispformula = ~ species,family = gaussian(),data = thermal.df.tropics.traits.CTmin
+)
+
+
+AIC(model_length_species_CTmin,model_CTmin_het,model_CTmin_het_species)
+
+performance::check_model(model_CTmin_het_species)
+
+
+
+model_CTmin_t <- glmmTMB(
+  set_temp ~ humidity * length_z + species,
+  family = t_family(),
+  data = thermal.df.tropics.traits.CTmin
+)
+
+model_CTmin_t_het <- glmmTMB(
+  set_temp ~ humidity * length_z + species,
+  dispformula = ~ species,
+  family = t_family(),
+  data = thermal.df.tropics.traits.CTmin
+)
+
+AIC(model_length_species_CTmin,model_CTmin_het,model_CTmin_t,model_CTmin_t_het)
+
+
+summary(model_CTmin_het_species)
+Anova(model_CTmin_het_species)
+
+# Simple slope analysis
+emtrends(model_CTmin_het_species,~ humidity ,var = "length_z")
+
+
+emm_length2_CTmin <- emmeans(model_CTmin_het_species,~ humidity * length_z,at = list(length_z = c(-1, 0, 1)))
+
+emm_length2_CTmin
+
+emm_df_CTmin <- as.data.frame(emm_length2_CTmin)
+
+emm_df_CTmin$body_size <- factor(emm_df_CTmin$length_z,levels = c(-1, 0, 1),labels = c("Small (−1 SD)", "Mean", "Large (+1 SD)"))
+
+contrast(emm_length2_CTmin,interaction = c("pairwise", "pairwise"),adjust = "tukey")
+
+
+
+p_em_length_CTmin <- ggplot(emm_df_CTmin,aes(x = humidity,y = emmean,group = body_size,linetype = body_size,colour = body_size)) +
+  geom_line(linewidth = 1.5) +
+  geom_point(size = 3) +
+  geom_errorbar(
+    aes(ymin = lower.CL, ymax = upper.CL),
+    width = 0.08,
+    linewidth = 0.6) +
+  scale_colour_manual(
+    values = c("Small (−1 SD)" = "#0072B2","Mean" = "#333333","Large (+1 SD)" = "#D55E00")) +
+  labs(x = "Relative humidity",y = "Estimated CTmin (°C)",linetype = "Body size",colour = "Body size") +
+  theme_bw(base_size = 15) +
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35),
+        panel.grid.major = element_blank(),  #remove major-grid labels
+        panel.grid.minor = element_blank()
+        )
+
+p_em_length_CTmin
+ggsave("p_em_length_CTmin.tiff", units="in",width = 16, height = 12,device='tiff', dpi=300)
+
+
+
+
+# Categorize continuous length_z into 3 groups in the raw data for the violins
+thermal.df.tropics.traits.CTmin <- thermal.df.tropics.traits.CTmin |>
+  mutate(
+    body_size_cat = case_when(
+      length_z <= -0.5 ~ "Small (−1 SD)",
+      length_z > -0.5 & length_z <= 0.5 ~ "Mean",
+      length_z > 0.5 ~ "Large (+1 SD)"
+    ),
+    body_size_cat = factor(body_size_cat, levels = c("Small (−1 SD)", "Mean", "Large (+1 SD)"))
+  )
+
+
+# The EMMeans for the interaction 
+emm_length2_CTmin <- emmeans(
+  model_CTmin_het_species,
+  ~ humidity | length_z,
+  at = list(length_z = c(-1, 0, 1))
+)
+
+# 3. Extract the Compact Letter Display (CLD) for multiple comparisons
+cld(emm_length2_CTmin, Letters = letters, adjust = "tukey")
+#cld_letters <- as.data.frame(cld_letters)
+
+# Clean up the letters (remove extra spaces)
+#cld_letters$.group <- trimws(cld_letters$.group)
+
+
+
+
+p_ctmin_body_RH<- ggplot(thermal.df.tropics.traits.CTmin, aes(x=body_size_cat, y=set_temp, fill=humidity),add = "jitter") +
+  theme_bw(base_size = 15)+
+  geom_violin(scale = "width",
+              color = "black",linewidth = 0.5,alpha=0.5) + 
+  stat_summary(fun = mean,
+               geom = "point",
+               size = 3,
+               color = "black")  +
+   geom_jitter(color="black", size=2, alpha=0.6, position = "jitter", shape = 16)+
+  scale_fill_manual(values = c(
+    "#56B4E9","#009E73", "#0072B2"))+
+  xlab("Humidity") + 
+  ylab("CTmin") + # Improve axis labels
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35),
+        panel.grid.major = element_blank(),  #remove major-grid labels
+        panel.grid.minor = element_blank()
+        )+
+  #facet_wrap(~humidity)+
+  ylim(NA,20)+guides(fill=guide_legend(title="Species"))
+
+p_ctmin_body_RH
+
+ggsave("p_ctmin_body_RH.tiff", units="in",width = 12, height = 9,device='tiff', dpi=300)
+
+
+
+
+
+emm_change_CTmin <- emmeans(model_CTmin_het_species,~ humidity | length_z,at = list(length_z = c(-1, 0, 1)))
+
+change_30_90_CTmin <- contrast(emm_change_CTmin, method = list("30% - 90%" = c(1, 0, -1)),by = "length_z")
+
+change_ci_CTmin <- confint(change_30_90_CTmin)
+
+change_df_CTmin <- as.data.frame(change_ci_CTmin)
+change_df_CTmin
+
+change_df_CTmin$body_size <- factor(change_df_CTmin$length_z,levels = c(-1, 0, 1),
+  labels = c("Small (−1 SD)","Mean","Large (+1 SD)"))
+
+
+
+p_em_length_change_CTmin<-ggplot(change_df_CTmin,aes(x = body_size, y = estimate)) +
+  geom_hline(yintercept = 0,linetype = "dashed") +
+  geom_point(size = 3) +
+  geom_errorbar(
+    aes(ymin = lower.CL,ymax = upper.CL),width = 0.15) +
+  labs(x = "Body size",y = "CTmin decline from 30% to 90% RH (°C)")+
+  theme_bw(base_size = 35)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 35),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35),
+        panel.grid.major = element_blank(),  #remove major-grid labels
+        panel.grid.minor = element_blank()
+        )
+
+p_em_length_change_CTmin
+ggsave("p_em_length_change_CTmin.tiff", units="in",width = 12, height = 12,device='tiff', dpi=300)
+
+```
+
+#### CTmax new figures
+
+```{r}
+
+library(tidyverse)
+library(emmeans)
+library(ggsignif) 
+
+# 1. Categorize continuous length_z into 3 groups for CTmin
+thermal.df.tropics.traits.CTmin <- thermal.df.tropics.traits.CTmin |>
+  mutate(
+    body_size_cat = case_when(
+      length_z <= -0.5 ~ "Small (−1 SD)",
+      length_z > -0.5 & length_z <= 0.5 ~ "Mean",
+      length_z > 0.5 ~ "Large (+1 SD)"
+    ),
+    body_size_cat = factor(body_size_cat, levels = c("Small (−1 SD)", "Mean", "Large (+1 SD)"))
+  )
+
+# 2. Build the Plot with Accurate ggsignif Brackets for CTmin
+p_ctmin_body_RH_new <- ggplot(thermal.df.tropics.traits.CTmin, aes(x = body_size_cat, y = set_temp, fill = humidity)) +
+  theme_bw(base_size = 15) +
+  
+  # Violins
+  geom_violin(position = position_dodge(width = 0.9), scale = "width", color = "black", linewidth = 0.5, alpha = 0.5) + 
+  
+  # Jittered points (aligned inside violins)
+  geom_jitter(aes(color = humidity), size = 2, alpha = 0.6, shape = 16, 
+              position = position_jitterdodge(jitter.width = 0.1, dodge.width = 0.9)) +
+  
+  # Mean points
+  stat_summary(fun = mean, geom = "point", size = 3, color = "black", 
+               position = position_dodge(width = 0.9)) +
+               
+  # === SIGNIFICANCE BRACKETS BASED ON EMMEANS CLD ===
+  
+  # Small (-1 SD): 30%(a), 50%(b), 90%(a)
+  geom_signif(
+    y_position = c(18.5, 18.5, 20), # Height of brackets on y-axis
+    xmin = c(0.7, 1.0, 0.7),    # Left side (comparing 30-50, 50-90, 30-90)
+    xmax = c(1.0, 1.3, 1.3),    # Right side
+    annotation = c("*", "*", "ns"), 
+    tip_length = 0.02,
+    textsize = 6,
+    color = "black"
+  ) +
+  
+  # Mean: 30%(b), 50%(c), 90%(a)
+  geom_signif(
+    y_position = c(12, 12, 13.5), 
+    xmin = c(1.7, 2.0, 1.7),    
+    xmax = c(2.0, 2.3, 2.3),    
+    annotation = c("*", "*", "***"), 
+    tip_length = 0.02,
+    textsize = 6,
+    color = "black"
+  ) +
+  
+  # Large (+1 SD): 30%(b), 50%(c), 90%(a)
+  geom_signif(
+    y_position = c(10.5, 10.5, 12), 
+    xmin = c(2.7, 3.0, 2.7),    
+    xmax = c(3.0, 3.3, 3.3),    
+    annotation = c("*", "*", "***"), 
+    tip_length = 0.02,
+    textsize = 6,
+    color = "black"
+  ) +
+  # ==================================================
+
+  scale_fill_manual(values = c("#56B4E9", "#009E73", "#0072B2")) +
+  scale_color_manual(values = c("#56B4E9", "#009E73", "#0072B2")) + 
+  
+  labs(x = "Body Size Category", y = "CTmin", fill = "Humidity", color = "Humidity") + 
+  theme_bw(base_size = 35) +
+  theme(
+    legend.position = "right",
+    panel.background = element_blank(),
+    strip.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 35),
+    axis.title = element_text(size = 35),
+    axis.text.x = element_text(size = 30),
+    axis.text.y = element_text(size = 35),
+    axis.title.x = element_text(size = 35),
+    axis.title.y = element_text(size = 40)
+  ) +
+  ylim(NA, 22) # Made sure this is high enough to fit the brackets at y=18
+
+p_ctmin_body_RH_new
+
+ggsave("p_ctmin_body_RH_new.tiff", units="in", width = 12, height = 9, device='tiff', dpi=300)
+
+
+```
+
+# Sub tropic
+
+# Subset data and normality check
+
+```{r}
+
+thermal.df.both.subtropics<- subset(thermal.df.both,site=="subtropics")
+# Create CTmax and CTmin dataframes
+thermal.df.both.subtropics_CTmax <- subset(thermal.df.both.subtropics,metric=="CTmax")
+thermal.df.both.subtropics_CTmin <- subset(thermal.df.both.subtropics,metric=="CTmin")
+
+
+# Check the normality-CTmax
+ggdensity(thermal.df.both.subtropics_CTmax$set_temp, 
+          main = "Density plot of Subtropic-CTmax",
+          xlab = "CTmax")  # looks right skewed
+ggqqplot(thermal.df.both.subtropics_CTmax$set_temp)
+
+hist(thermal.df.both.subtropics_CTmax$set_temp, main="Histogram of Subtropic-CTmax", xlab="", breaks=10) # looks not nromal
+skewness(thermal.df.both.subtropics_CTmax$set_temp, na.rm = TRUE) # 0.130749
+shapiro.test(as.numeric(thermal.df.both.subtropics_CTmax$set_temp))#p= 0.01744 not normal. Will do some transformation
+
+
+# Transform data to be normal
+thermal.df.both.subtropics_CTmax$set_temp.lg <-
+  log(thermal.df.both.subtropics_CTmax$set_temp)
+
+
+# Check the normality-CTmax_transformed data
+ggdensity(thermal.df.both.subtropics_CTmax$set_temp.lg, 
+          main = "Density plot of Subtropic-CTmax",
+          xlab = "CTmax")  # looks right skewed
+ggqqplot(thermal.df.both.subtropics_CTmax$set_temp.lg)
+
+hist(thermal.df.both.subtropics_CTmax$set_temp.lg, main="Histogram of Subtropic-CTmax", xlab="", breaks=10) # looks not nromal
+skewness(thermal.df.both.subtropics_CTmax$set_temp.lg, na.rm = TRUE) # 0.130749
+shapiro.test(as.numeric(thermal.df.both.subtropics_CTmax$set_temp.lg))#p= 0.01744 not normal. Will do some transformation
+
+# Transformed data are not normal. so not normal distribution data
+
+```
+
+# Multiple Factor Analysis (MFA) for trait data
+
+Reference- <http://www.sthda.com/english/articles/31-principal-component-methods-in-r-practical-guide/116-mfa-multiple-factor-analysis-in-r-essentials/>
+
+We employ variables encompassing soil chemical and physical properties, forest structure, topographical features, and climate conditions in this context. These variables collectively characterize the distinct habitats present across various sites.
+
+The environmental variables have can organize in to several categories
+
+```         
+1)First group - Site information (first 6 columns)
+1)Second group- Soil chemical properties, continuous variables, next 4 columns
+2)Third group - Soil physical properties next 4 columns
+3)Fourth group- Vegetation structure next 2 columns
+4)Fifth group- Site slope next 1 columns
+5)Sixth group- Site direction next 1 columns
+```
+
+“c” or “s” for quantitative variables. If “s”, the variables are scaled to unit variance. “n” for categorical variables. “f” for frequencies (from a contingency tables).
+
+```{r}
+#libraries
+library("FactoMineR")
+library("factoextra")
+
+# Data arranging
+
+e.data.MFA<-read.csv("community_and_e_data/alpha_e_data.csv")
+thermal.df.MFA <- thermal.df[ -c(1:2,5:8) ] # isolate the trait data
+
+colnames(e.data.MFA)
+
+str(e.data.MFA)
+
+group = c(1,4,4,4,2,3,3,3)
+name.group = c("site", # Describes the site
+               "community",
+               "chemical", # Describes the soil chemical properties
+               "physical", # Describes the soil physical properties
+               "vegetation", # Describes the vegetation structure
+               #"slope_aspect", # Describes the topography
+               "temperature", # Describes  temperature
+               "light", # Describes the dry season light availability
+               "beta" # Components of the beta diversity
+                        ) 
+
+e.data.mfa <- MFA(e.data.MFA, 
+               group = c(1,4,4,4,2,3,3,3), 
+               type = c("n","s","s","s","s","s","s","s"),
+               name.group=c("site","community","chemical","physical","vegetation","temperature", "light","beta"),
+               num.group.sup = c(1,2,8),
+               graph = TRUE)
+
+print(e.data.mfa)
+e.data.mfa.eig.val <- get_eigenvalue(e.data.mfa)
+head(e.data.mfa.eig.val)
+
+p_eig_screen_plot<-fviz_screeplot(e.data.mfa)+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 40),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35))
+
+print(p_eig_screen_plot)
+ggsave("p_eig_screen_plot.tiff", units="in",width = 12, height = 9,device='tiff', dpi=300)
+
+# Coordinates of groups
+#head(group$coord)
+# Cos2: quality of representation on the factor map
+#head(group$cos2)
+# Contributions to the  dimensions
+#head(group$contrib)
+
+quanti.var <- get_mfa_var(e.data.mfa, "quanti.var")
+quanti.var 
+
+# Coordinates
+head(quanti.var$coord)
+# Cos2: quality on the factor map
+head(quanti.var$cos2)
+# Contributions to the dimensions
+head(quanti.var$contrib)
+
+
+
+# Contributions to dimension 1
+
+p_dim1_contri<-fviz_contrib(e.data.mfa, choice = "quanti.var", axes = 1, top = 20,
+             palette = "Paired")+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 20),
+        text = element_text(size = 20),
+        axis.title = element_text(size = 25),
+        axis.text.x=element_text(size =10),
+        axis.text.y=element_text(size =25),
+        axis.title.x=element_text(size =25),
+        axis.title.y=element_text(size =20),
+        plot.title = element_text(size = 25))
+print(p_dim1_contri)
+ggsave("p_dim1_contri.tiff", units="in",width = 12, height = 8,device='tiff', dpi=300)
+
+# Contributions to dimension 2
+p_dim2_contri<-fviz_contrib(e.data.mfa, choice = "quanti.var", axes = 2, top = 20,
+             palette = "Paired")+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 20),
+        text = element_text(size = 20),
+        axis.title = element_text(size = 25),
+        axis.text.x=element_text(size =10),
+        axis.text.y=element_text(size =25),
+        axis.title.x=element_text(size =25),
+        axis.title.y=element_text(size =20),
+        plot.title = element_text(size = 25))
+print(p_dim2_contri)
+ggsave("p_dim2_contri.tiff", units="in",width = 12, height = 8,device='tiff', dpi=300)
+
+
+fviz_mfa_var(e.data.mfa, "quanti.var", palette = "jco", 
+             col.var.sup = "violet", repel = TRUE)
+
+p_MFA_groups<-fviz_mfa_var(e.data.mfa, "quanti.var", palette = "jco", 
+             col.var.sup = "black", repel = TRUE,
+             geom = c("point", "arrow","text"), legend = "bottom")+
+  theme(legend.position = "bottom")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 40),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35))
+
+print(p_MFA_groups)
+ggsave("p_MFA_groups.tiff", units="in",width = 12, height = 9,device='tiff', dpi=300)
+
+update_geom_defaults("text", list(size = 15))
+# Without legend
+p_MFA_groups_no_legend<-fviz_mfa_var(e.data.mfa, "quanti.var", palette = "jco", 
+             col.var.sup = "black", repel = TRUE,
+             geom = c("point","arrow"), legend = "bottom")+
+  theme(legend.position = "none")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 40),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35))
+
+print(p_MFA_groups_no_legend)
+ggsave("p_MFA_groups_no_legend.tiff", units="in",width = 12, height = 9,device='tiff', dpi=300)
+
+
+# Correlation between quantitative variables and dimensions.
+p_corr_q_var<-fviz_mfa_var(e.data.mfa, "quanti.var",
+                           col.var = "contrib", 
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), 
+             col.var.sup = "violet", repel = TRUE,
+             geom = c("point", "text"))+
+  theme(legend.position = "right")+
+  theme(panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text = element_text(size = 35),
+        text = element_text(size = 40),
+        axis.title = element_text(size = 35),
+        axis.text.x=element_text(size =30),
+        axis.text.y=element_text(size =35),
+        axis.title.x=element_text(size =35),
+        axis.title.y=element_text(size =40),
+        plot.title = element_text(size = 35))
+
+print(p_corr_q_var)
+ggsave("p_corr_q_var.tiff", units="in",width = 12, height = 9,device='tiff', dpi=300)
+
+
+a<-fviz_mfa_ind(e.data.mfa, 
+             habillage = "site_habitat_season", # color by groups 
+             palette = c("#00AFBB", "#E7B800", "#FC4E07","green4","#00AFBB", "#E7B800", "#FC4E07","green4"),
+             addEllipses = TRUE, ellipse.type = "confidence", 
+             repel = TRUE # Avoid text overlapping
+             )
+print(a)
+ggsave("a.tiff", units="in",width = 12, height = 9,device='tiff', dpi=300)
+
+
+# To get the results for individuals,
+ind_MFA <- get_mfa_ind(e.data.mfa)
+ind_MFA
+
+# Plot individuals
+p_individual_MFA<-fviz_mfa_ind(e.data.mfa, geom = c("point", "text"),
+             habillage = "site_habitat_season", # color by groups 
+             palette = c("#00AFBB", "#E7B800", "#FC4E07","green4","#00AFBB", "#E7B800", "#FC4E07","green4"),
+             addEllipses = TRUE, ellipse.type = "confidence",
+             repel = TRUE # Avoid text overlapping
+             )
+print(p_individual_MFA)
+ggsave("p_individual_MFA.tiff", units="in",width = 12, height = 9,device='tiff', dpi=300)
+
+e.data.mfa.axis<-get_mfa(e.data.mfa,element = c("ind"))
+e.data.mfa.df<-as.data.frame(e.data.mfa.axis$coord)
+
+
+
+
+
+```
